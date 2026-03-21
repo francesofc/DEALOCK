@@ -26,6 +26,7 @@ import { getLeads } from "@/lib/data";
 import { getLeadIntelligence } from "@/lib/intelligence/mock-intelligence";
 import { Lead, LeadStatus } from "@/types/database";
 import { SellerIntelligence } from "@/types/seller-intelligence";
+import { useTranslation } from "@/lib/i18n";
 
 // ============================================
 // SELLER STATUS DEFINITIONS
@@ -177,6 +178,7 @@ function ReadinessBar({ score }: { score: number }) {
 
 export default function SellersPage() {
   const router = useRouter();
+  const { t } = useTranslation();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [intelligence, setIntelligence] = useState<Record<string, SellerIntelligence>>({});
   const [loading, setLoading] = useState(true);
@@ -255,22 +257,22 @@ export default function SellersPage() {
       {/* HEADER */}
       <div className="flex items-end justify-between mb-6 pb-6 border-b border-white/[0.06]">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Sellers</h1>
-          <p className="text-white/40 mt-1">Commercial pipeline management</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{t.leads.title}</h1>
+          <p className="text-white/40 mt-1">{t.leads.subtitle}</p>
         </div>
         <Button className="gap-2 bg-white text-black hover:bg-white/90">
           <Plus className="w-4 h-4" />
-          Add Seller
+          {t.common.create}
         </Button>
       </div>
 
       {/* STATS STRIP */}
       <div className="grid grid-cols-5 gap-4 mb-6">
-        <StatCard icon={Target} value={stats.total} label="Total" />
-        <StatCard icon={Flame} value={stats.critical} label="Critical" color="red" />
-        <StatCard icon={Zap} value={stats.nearMandate} label="Near Mandate" color="orange" />
-        <StatCard icon={FileSignature} value={stats.proposalOut} label="Proposal Out" color="amber" />
-        <StatCard icon={CheckIcon} value={stats.signed} label="Signed" color="emerald" />
+        <StatCard icon={Target} value={stats.total} label={t.leads.stats.total} />
+        <StatCard icon={Flame} value={stats.critical} label={t.leads.stats.critical} color="red" />
+        <StatCard icon={Zap} value={stats.nearMandate} label={t.leads.stats.near_mandate} color="orange" />
+        <StatCard icon={FileSignature} value={stats.proposalOut} label={t.leads.stats.proposal_out} color="amber" />
+        <StatCard icon={CheckIcon} value={stats.signed} label={t.leads.stats.signed} color="emerald" />
       </div>
 
       {/* FILTERS */}
@@ -278,13 +280,13 @@ export default function SellersPage() {
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
           <Input
-            placeholder="Search by name, city, or property..."
+            placeholder={t.leads.search_placeholder}
             className="pl-11 bg-white/[0.03] border-white/[0.06] focus:border-white/10"
           />
         </div>
         <Button variant="outline" className="gap-2 border-white/10 hover:bg-white/[0.04]">
           <Filter className="w-4 h-4" />
-          Filter
+          {t.common.filter}
         </Button>
       </div>
 
@@ -296,7 +298,7 @@ export default function SellersPage() {
           <section>
             <UrgencyHeader 
               icon={Flame} 
-              title="Critical — Act Now" 
+              title={t.leads.priorities.critical_now} 
               count={criticalLeads.length}
               color="red"
             />
@@ -318,7 +320,7 @@ export default function SellersPage() {
           <section>
             <UrgencyHeader 
               icon={Zap} 
-              title="High Priority" 
+              title={t.leads.priorities.high_priority} 
               count={highLeads.length}
               color="orange"
             />
@@ -340,7 +342,7 @@ export default function SellersPage() {
           <section>
             <UrgencyHeader 
               icon={ArrowRight} 
-              title="Developing" 
+              title={t.leads.priorities.developing} 
               count={normalLeads.length}
               color="blue"
             />

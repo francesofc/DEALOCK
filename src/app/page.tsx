@@ -45,6 +45,7 @@ import {
   ActivityType 
 } from "@/types/database";
 import { SellerIntelligence } from "@/types/seller-intelligence";
+import { useTranslation } from "@/lib/i18n";
 
 const activityTypeMap: Record<ActivityType, { label: string }> = {
   call: { label: "Call" },
@@ -61,6 +62,7 @@ const activityTypeMap: Record<ActivityType, { label: string }> = {
 
 export default function CommandCenterPage() {
   const router = useRouter();
+  const { t } = useTranslation();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [buyers, setBuyers] = useState<Buyer[]>([]);
   const [matches, setMatches] = useState<MatchOpportunity[]>([]);
@@ -196,7 +198,7 @@ export default function CommandCenterPage() {
             <p className="text-sm text-white/40 mb-2">
               {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
             </p>
-            <h1 className="text-3xl font-semibold tracking-tight">Command Center</h1>
+            <h1 className="text-3xl font-semibold tracking-tight">{t.command_center.title}</h1>
           </div>
         </div>
       </section>
@@ -205,42 +207,42 @@ export default function CommandCenterPage() {
       <section className="grid grid-cols-6 gap-4">
         <MetricCard 
           value={metrics.urgentSellers} 
-          label="Urgent Sellers" 
+          label={t.command_center.metrics.leads_attention} 
           icon={Flame}
           color="red"
           onClick={() => router.push('/sellers')}
         />
         <MetricCard 
           value={metrics.qualifiedBuyers} 
-          label="Qualified Buyers" 
+          label={t.command_center.metrics.exclusivity_candidates} 
           icon={Users}
           color="blue"
           onClick={() => router.push('/buyers')}
         />
         <MetricCard 
           value={metrics.activeMatches} 
-          label="Active Matches" 
+          label={t.command_center.metrics.mandate_opportunities} 
           icon={Puzzle}
           color="violet"
           onClick={() => router.push('/match')}
         />
         <MetricCard 
           value={metrics.readyBuyers} 
-          label="Ready Buyers" 
+          label={t.command_center.metrics.exclusivity_candidates} 
           icon={ShieldCheck}
           color="emerald"
           onClick={() => router.push('/finance')}
         />
         <MetricCard 
           value={metrics.activeMandates} 
-          label="Active Mandates" 
+          label={t.command_center.metrics.active_mandates} 
           icon={FileSignature}
           color="amber"
           onClick={() => router.push('/mandates')}
         />
         <MetricCard 
           value={formatCurrency(metrics.pipelineValue)} 
-          label="Pipeline Value" 
+          label={t.command_center.metrics.stalled_deals} 
           icon={BarChart3}
           color="default"
           isCurrency
@@ -253,8 +255,8 @@ export default function CommandCenterPage() {
           <SectionHeader 
             icon={Flame}
             iconColor="red"
-            title="Urgent Now"
-            subtitle={`${urgentNow.length} items requiring immediate action`}
+            title={t.command_center.sections.urgent_now}
+            subtitle={`${urgentNow.length} ${t.command_center.labels.items_requiring_action}`}
           />
           <div className="space-y-3">
             {urgentNow.map((action, i) => {
@@ -268,8 +270,8 @@ export default function CommandCenterPage() {
                     iconColor="orange"
                     title={lead.owner_name}
                     subtitle={`${lead.property_type} · ${lead.city}`}
-                    action={intel?.next_best_move.replace(/_/g, ' ') || 'Review opportunity'}
-                    badge={{ text: "Closing", color: "red" }}
+                    action={intel?.next_best_move.replace(/_/g, ' ') || t.command_center.labels.review_opportunity}
+                    badge={{ text: t.command_center.labels.closing, color: "red" }}
                     meta={intel ? `${intel.mandate_readiness_score}% ready` : undefined}
                     onClick={() => router.push(`/sellers/${lead.id}`)}
                   />
@@ -284,8 +286,8 @@ export default function CommandCenterPage() {
                     iconColor="violet"
                     title={`Match Opportunity · ${match.match_score_value}% Fit`}
                     subtitle={match.recommended_action}
-                    action="Contact buyer now"
-                    badge={{ text: "Urgent", color: "red" }}
+                    action={t.command_center.labels.contact_buyer}
+                    badge={{ text: t.command_center.labels.urgent, color: "red" }}
                     onClick={() => router.push('/match')}
                   />
                 );
@@ -304,8 +306,8 @@ export default function CommandCenterPage() {
           <SectionHeader 
             icon={Zap}
             iconColor="amber"
-            title="Important Today"
-            subtitle="Schedule time for these"
+            title={t.command_center.sections.important_today}
+            subtitle={t.command_center.labels.schedule_time}
           />
           {importantToday.length > 0 ? (
             <div className="space-y-3">
@@ -330,7 +332,7 @@ export default function CommandCenterPage() {
                           <span className="text-sm font-medium text-emerald-400">
                             {intel.mandate_readiness_score}%
                           </span>
-                          <p className="text-xs text-white/40">ready</p>
+                          <p className="text-xs text-white/40">{t.command_center.labels.ready.toLowerCase()}</p>
                         </div>
                       )}
                     </div>
@@ -348,7 +350,7 @@ export default function CommandCenterPage() {
           ) : (
             <EmptyStateCompact 
               icon={CheckCircle2}
-              message="No urgent items for today"
+              message={t.command_center.labels.no_urgent}
             />
           )}
         </section>
@@ -358,8 +360,8 @@ export default function CommandCenterPage() {
           <SectionHeader 
             icon={Sparkles}
             iconColor="violet"
-            title="Strategic Opportunities"
-            subtitle="High-value matches to pursue"
+            title={t.command_center.sections.strategic_opportunities}
+            subtitle={t.command_center.labels.high_value_matches}
           />
           {strategicOpportunities.length > 0 ? (
             <div className="space-y-3">
@@ -373,7 +375,7 @@ export default function CommandCenterPage() {
                       <Puzzle className="w-5 h-5 text-violet-400" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium">Excellent Match</p>
+                      <p className="font-medium">{t.command_center.labels.excellent_match}</p>
                       <p className="text-sm text-white/40 truncate">
                         {match.recommended_action}
                       </p>
@@ -388,8 +390,8 @@ export default function CommandCenterPage() {
           ) : (
             <EmptyStateCompact 
               icon={Target}
-              message="No excellent matches yet"
-              action="Browse Match page"
+              message={t.command_center.labels.no_matches}
+              action={t.command_center.labels.browse_match}
               onAction={() => router.push('/match')}
             />
           )}
@@ -404,8 +406,8 @@ export default function CommandCenterPage() {
           <SectionHeader 
             icon={AlertTriangle}
             iconColor="amber"
-            title="Blockers"
-            subtitle="Issues preventing progress"
+            title={t.command_center.sections.blockers}
+            subtitle={t.command_center.labels.issues_preventing}
           />
           {blockers.length > 0 ? (
             <div className="space-y-3">
@@ -437,7 +439,7 @@ export default function CommandCenterPage() {
           ) : (
             <EmptyStateCompact 
               icon={CheckCircle2}
-              message="No blockers - pipeline flowing"
+              message={t.command_center.labels.no_blockers}
               variant="success"
             />
           )}
@@ -448,8 +450,8 @@ export default function CommandCenterPage() {
           <SectionHeader 
             icon={ShieldCheck}
             iconColor="emerald"
-            title="Ready Resources"
-            subtitle="Buyers cleared to proceed"
+            title={t.command_center.sections.ready_resources}
+            subtitle={t.command_center.labels.buyers_cleared}
           />
           {readyResources.length > 0 ? (
             <div className="flex flex-wrap gap-3">
@@ -463,7 +465,7 @@ export default function CommandCenterPage() {
                   <div>
                     <p className="font-medium text-sm">{buyer.name}</p>
                     <p className="text-xs text-white/40">
-                      {formatCurrency(buyer.budget_max)} · Ready
+                      {formatCurrency(buyer.budget_max)} · {t.command_center.labels.ready}
                     </p>
                   </div>
                 </div>
@@ -472,7 +474,7 @@ export default function CommandCenterPage() {
           ) : (
             <EmptyStateCompact 
               icon={Users}
-              message="No finance-ready buyers yet"
+              message={t.command_center.labels.no_ready_buyers}
             />
           )}
         </section>
@@ -485,7 +487,7 @@ export default function CommandCenterPage() {
             <div className="w-8 h-8 rounded-lg bg-white/[0.06] flex items-center justify-center">
               <ActivityIcon className="w-4 h-4 text-white" />
             </div>
-            <h2 className="text-lg font-medium">Recent Activity</h2>
+            <h2 className="text-lg font-medium">{t.command_center.sections.recent_activity}</h2>
           </div>
           <Button 
             variant="ghost" 
@@ -493,7 +495,7 @@ export default function CommandCenterPage() {
             className="text-white/50 hover:text-white gap-1"
             onClick={() => router.push('/activities')}
           >
-            View all
+            {t.command_center.labels.view_all}
             <ArrowRight className="w-4 h-4" />
           </Button>
         </div>

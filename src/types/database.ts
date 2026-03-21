@@ -29,6 +29,7 @@ export interface Lead {
   created_at: string
   updated_at: string
   owner_name: string
+  email: string
   phone: string
   whatsapp_status: WhatsappStatus
   source: string

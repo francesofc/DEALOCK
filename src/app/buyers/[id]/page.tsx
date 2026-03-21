@@ -3,6 +3,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { useTranslation } from "@/lib/i18n";
 import { Badge } from "@/components/ui/Badge";
 import { Progress } from "@/components/ui/Progress";
 import { 
@@ -39,6 +40,8 @@ import {
 import Link from "next/link";
 import { getBuyerById, getActivitiesByBuyerId, getMatches, getLeads, getFinanceProfileByBuyer } from "@/lib/data";
 import { Buyer, Activity, MatchOpportunity, Lead, FinanceProfile, BuyerStatus } from "@/types/database";
+import { EditDrawer } from "@/components/ui/EditDrawer";
+import { BuyerEditPanel } from "@/components/buyers/BuyerEditPanel";
 
 // ============================================
 // STATUS MAPS
@@ -97,6 +100,7 @@ const formatCurrency = (amount: number) => {
 export default function BuyerDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { t } = useTranslation();
   const buyerId = params.id as string;
   
   const [buyer, setBuyer] = useState<Buyer | null>(null);
@@ -105,6 +109,10 @@ export default function BuyerDetailPage() {
   const [matches, setMatches] = useState<MatchOpportunity[]>([]);
   const [leads, setLeads] = useState<Record<string, Lead>>({});
   const [loading, setLoading] = useState(true);
+  const [isEditDrawerOpen, setIsEditDrawerOpen] = useState(false);
+  const [editedBuyer, setEditedBuyer] = useState<Buyer | null>(null);
+  const [editedFinance, setEditedFinance] = useState<FinanceProfile | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     async function loadData() {
@@ -148,7 +156,7 @@ export default function BuyerDetailPage() {
         <Link href="/buyers" className="mt-4">
           <Button variant="ghost" size="sm" className="gap-2">
             <ArrowLeft className="w-4 h-4" />
-            Back to Buyers
+            {t.buyers.back_to}
           </Button>
         </Link>
       </div>
@@ -166,12 +174,21 @@ export default function BuyerDetailPage() {
         <Link href="/buyers">
           <Button variant="ghost" size="sm" className="gap-2 text-white/60 hover:text-white hover:bg-white/[0.04]">
             <ArrowLeft className="w-4 h-4" />
-            Back to Buyers
+            {t.buyers.back_to}
           </Button>
         </Link>
-        <Button variant="outline" size="sm" className="gap-2 border-white/10 hover:bg-white/[0.04]">
+        <Button 
+          variant="outline" 
+          size="sm" 
+          className="gap-2 border-white/10 hover:bg-white/[0.04]"
+          onClick={() => {
+            setEditedBuyer(buyer);
+            setEditedFinance(finance);
+            setIsEditDrawerOpen(true);
+          }}
+        >
           <Edit3 className="w-4 h-4" />
-          Edit Profile
+          {t.buyers.edit_profile}
         </Button>
       </div>
 
@@ -190,7 +207,7 @@ export default function BuyerDetailPage() {
                 </Badge>
                 {buyer.pre_approved && (
                   <Badge className="bg-blue-500/20 text-blue-400 border-0">
-                    Pre-approved
+                    {t.buyers.pre_approved_badge}
                   </Badge>
                 )}
               </div>
@@ -200,7 +217,7 @@ export default function BuyerDetailPage() {
               </h1>
               <div className="flex items-center gap-2 text-white/60">
                 <MapPin className="w-4 h-4" />
-                <span>Targeting: {buyer.target_areas.slice(0, 2).join(', ')}</span>
+                <span>{t.buyers.targeting}: {buyer.target_areas.slice(0, 2).join(', ')}</span>
                 {buyer.target_areas.length > 2 && (
                   <span className="text-white/40">+{buyer.target_areas.length - 2} more</span>
                 )}
@@ -209,7 +226,7 @@ export default function BuyerDetailPage() {
 
             {/* Center: Budget */}
             <div className="lg:text-center lg:px-8 lg:border-x border-white/[0.06]">
-              <p className="text-sm text-white/40 mb-1">Budget Range</p>
+              <p className="text-sm text-white/40 mb-1">{t.buyers.budget_range}</p>
               <p className="text-3xl font-semibold tracking-tight">
                 {formatCurrency(buyer.budget_min)} - {formatCurrency(buyer.budget_max)}
               </p>
@@ -218,9 +235,9 @@ export default function BuyerDetailPage() {
               </p>
             </div>
             
-            {/* Right: Finance Readiness */}
+            {/* Right: {t.buyers.finance_readiness} */}
             <div className="lg:text-right">
-              <p className="text-sm text-white/40 mb-2">Finance Readiness</p>
+              <p className="text-sm text-white/40 mb-2">{t.buyers.finance_readiness}</p>
               {finance ? (
                 <>
                   <div className="flex items-center lg:justify-end gap-3">
@@ -243,7 +260,7 @@ export default function BuyerDetailPage() {
                   </p>
                 </>
               ) : (
-                <p className="text-white/40">No finance profile</p>
+                <p className="text-white/40">{t.buyers.no_finance_profile}</p>
               )}
             </div>
           </div>
@@ -604,6 +621,39 @@ export default function BuyerDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Edit Drawer */}
+      {editedBuyer && (
+        <EditDrawer
+          isOpen={isEditDrawerOpen}
+          onClose={() => {
+            setIsEditDrawerOpen(false);
+            setEditedBuyer(null);
+            setEditedFinance(null);
+          }}
+          title="Edit Buyer Profile"
+          subtitle={`Editing ${buyer.name}`}
+          onSave={async () => {
+            setIsSaving(true);
+            // Simulate API call - in production, this would call your backend
+            await new Promise(resolve => setTimeout(resolve, 500));
+            setBuyer(editedBuyer);
+            if (editedFinance) {
+              setFinance(editedFinance);
+            }
+            setIsSaving(false);
+            setIsEditDrawerOpen(false);
+          }}
+          isSaving={isSaving}
+        >
+          <BuyerEditPanel
+            buyer={editedBuyer}
+            finance={editedFinance}
+            onChange={setEditedBuyer}
+            onFinanceChange={setEditedFinance}
+          />
+        </EditDrawer>
+      )}
     </div>
   );
 }

@@ -16,11 +16,14 @@ export interface TranslationDictionary {
   nav: {
     dashboard: string
     leads: string
+    buyers: string
+    match: string
     pipeline: string
     activities: string
     mandates: string
     settings: string
     logout: string
+    finance: string
   }
   
   // Command Center (Dashboard)
@@ -40,12 +43,53 @@ export interface TranslationDictionary {
       active_mandates: string
       stalled_deals: string
     }
+    sections: {
+      urgent_now: string
+      important_today: string
+      strategic_opportunities: string
+      blockers: string
+      ready_resources: string
+      recent_activity: string
+    }
+    labels: {
+      items_requiring_action: string
+      schedule_time: string
+      high_value_matches: string
+      issues_preventing: string
+      buyers_cleared: string
+      view_all: string
+      closing: string
+      urgent: string
+      ready: string
+      excellent_match: string
+      contact_buyer: string
+      review_opportunity: string
+      no_urgent: string
+      no_matches: string
+      browse_match: string
+      no_blockers: string
+      no_ready_buyers: string
+    }
   }
   
-  // Leads
+  // Leads / Sellers List
   leads: {
     title: string
     subtitle: string
+    search_placeholder: string
+    stats: {
+      total: string
+      critical: string
+      near_mandate: string
+      proposal_out: string
+      signed: string
+    }
+    priorities: {
+      critical_now: string
+      high_priority: string
+      developing: string
+      nurture: string
+    }
     columns: {
       name: string
       property: string
@@ -67,9 +111,15 @@ export interface TranslationDictionary {
       description: string
       action: string
     }
+    back_to: string
+    edit: string
+    refresh_analysis: string
+    property_value: string
+    mandate_readiness: string
+    beds: string
   }
   
-  // Lead Detail / Commercial Cockpit
+  // Lead / Seller Detail
   lead: {
     title: string
     commercial_cockpit: string
@@ -88,6 +138,9 @@ export interface TranslationDictionary {
       suggested_timing: string
       ai_scripts: string
       activity_timeline: string
+      mandate_status: string
+      seller_profile: string
+      notes: string
     }
     actions: {
       analyze_lead: string
@@ -97,6 +150,8 @@ export interface TranslationDictionary {
       schedule_meeting: string
       propose_mandate: string
       move_to_pipeline: string
+      update_mandate: string
+      follow_up: string
     }
     badges: {
       new: string
@@ -108,6 +163,150 @@ export interface TranslationDictionary {
       mandate_sent: string
       mandate_signed: string
       lost: string
+    }
+    mandate: {
+      no_mandate: string
+      ready_to_propose: string
+      continue_building: string
+      type: string
+      exclusive: string
+      non_exclusive: string
+      propose: string
+      activation_strategy: string
+    }
+  }
+  
+  // Buyers List
+  buyers: {
+    title: string
+    subtitle: string
+    search_placeholder: string
+    stats: {
+      total: string
+      ready: string
+      urgent: string
+      committed: string
+      blocked: string
+    }
+    priorities: {
+      urgent: string
+      high_priority: string
+      active: string
+      nurture: string
+    }
+    columns: {
+      name: string
+      criteria: string
+      budget: string
+      timeline: string
+      status: string
+    }
+    actions: {
+      view: string
+      edit: string
+      delete: string
+    }
+    back_to: string
+    edit_profile: string
+    budget_range: string
+    finance_readiness: string
+    timeline_label: string
+    targeting: string
+    cash_buyer: string
+    pre_approved: string
+    pre_approved_badge: string
+    no_finance_profile: string
+    find_matches: string
+    suggested_message: string
+    copy_message: string
+    next_action: string
+    mark_complete: string
+    contact_info: string
+    qualification_profile: string
+  }
+  
+  // Buyer Detail
+  buyer: {
+    seriousness: {
+      browsing: string
+      interested: string
+      serious: string
+      committed: string
+    }
+    timeline: {
+      browsing: string
+      three_months: string
+      one_month: string
+      immediate: string
+    }
+    badges: {
+      new: string
+      contacted: string
+      qualified: string
+      viewing_scheduled: string
+      offer_pending: string
+      closed: string
+      inactive: string
+    }
+  }
+  
+  // Edit Drawers
+  edit: {
+    seller_title: string
+    buyer_title: string
+    sections: {
+      contact: string
+      property: string
+      mandate_context: string
+      situation: string
+      notes: string
+      search_criteria: string
+      budget: string
+      timeline: string
+      finance: string
+    }
+    fields: {
+      owner_name: string
+      name: string
+      phone: string
+      email: string
+      language: string
+      seller_type: string
+      property_type: string
+      city: string
+      neighborhood: string
+      area: string
+      bedrooms: string
+      price: string
+      status: string
+      source: string
+      listing_url: string
+      seller_profile: string
+      internal_notes: string
+      property_types: string
+      target_areas: string
+      min_bedrooms: string
+      min_area: string
+      budget_min: string
+      budget_max: string
+      timeline_label: string
+      seriousness: string
+      buyer_type: string
+      annual_income: string
+      down_payment: string
+      monthly_debt: string
+    }
+    hints: {
+      source: string
+      listing_url: string
+      seller_profile: string
+      internal_notes: string
+      property_types: string
+      target_areas: string
+    }
+    toggles: {
+      cash_buyer: string
+      pre_approved: string
     }
   }
   
@@ -219,6 +418,8 @@ export interface TranslationDictionary {
     actions: string
     not_available: string
     coming_soon: string
+    back: string
+    save_changes: string
   }
 }
 

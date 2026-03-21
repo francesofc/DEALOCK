@@ -14,20 +14,20 @@ import {
   Check,
   ChevronRight
 } from "lucide-react";
-import { LANGUAGES, Language } from "@/types/i18n";
-
-const settingsSections = [
-  { id: "profile", title: "Profile", description: "Your information", icon: User },
-  { id: "languages", title: "Languages", description: "Interface & communications", icon: Languages },
-  { id: "ai", title: "AI Settings", description: "Intelligence configuration", icon: Bot },
-  { id: "notifications", title: "Notifications", description: "Alerts & updates", icon: Bell },
-  { id: "system", title: "System", description: "Diagnostics & status", icon: Database },
-];
+import { useTranslation } from "@/lib/i18n";
 
 export default function SettingsPage() {
+  const { t, language, setLanguage, languages } = useTranslation();
   const [activeSection, setActiveSection] = useState("profile");
-  const [interfaceLang, setInterfaceLang] = useState<Language>("en");
-  const [supportedLangs, setSupportedLangs] = useState<Language[]>(["en", "fr", "pt"]);
+  const [supportedLangs, setSupportedLangs] = useState<typeof language[]>(["en", "fr", "pt"]);
+
+  const settingsSections = [
+    { id: "profile", title: t.settings.sections.profile, description: t.settings.subtitle, icon: User },
+    { id: "languages", title: t.settings.sections.languages, description: "Interface & communications", icon: Languages },
+    { id: "ai", title: t.settings.sections.ai, description: "Intelligence configuration", icon: Bot },
+    { id: "notifications", title: t.settings.sections.notifications, description: "Alerts & updates", icon: Bell },
+    { id: "system", title: t.settings.sections.diagnostics, description: "Diagnostics & status", icon: Database },
+  ];
 
   const renderContent = () => {
     switch (activeSection) {
@@ -66,20 +66,20 @@ export default function SettingsPage() {
         return (
           <div className="space-y-8">
             <div className="pb-6 border-b border-white/[0.06]">
-              <h2 className="text-lg font-medium mb-1">Languages</h2>
-              <p className="text-sm text-white/40">Configure interface and communication languages</p>
+              <h2 className="text-lg font-medium mb-1">{t.settings.languages.title}</h2>
+              <p className="text-sm text-white/40">{t.settings.languages.description}</p>
             </div>
             
             {/* Interface Language */}
             <div>
-              <h3 className="text-sm font-medium text-white/60 mb-4">Interface Language</h3>
+              <h3 className="text-sm font-medium text-white/60 mb-4">{t.settings.languages.interface_language}</h3>
               <div className="space-y-2">
-                {LANGUAGES.map((lang) => (
+                {languages.map((lang: typeof languages[0]) => (
                   <div
                     key={lang.code}
-                    onClick={() => setInterfaceLang(lang.code)}
+                    onClick={() => setLanguage(lang.code)}
                     className={`flex items-center justify-between p-4 rounded-xl cursor-pointer transition-all ${
-                      interfaceLang === lang.code 
+                      language === lang.code 
                         ? 'bg-white/[0.06] border border-white/[0.1]' 
                         : 'hover:bg-white/[0.02]'
                     }`}
@@ -91,7 +91,7 @@ export default function SettingsPage() {
                         <p className="text-sm text-white/40">{lang.name}</p>
                       </div>
                     </div>
-                    {interfaceLang === lang.code && (
+                    {language === lang.code && (
                       <div className="w-6 h-6 rounded-full bg-white flex items-center justify-center">
                         <Check className="w-4 h-4 text-black" />
                       </div>
@@ -99,15 +99,14 @@ export default function SettingsPage() {
                   </div>
                 ))}
               </div>
-              <p className="text-xs text-white/30 mt-4">More languages coming: Spanish, Russian</p>
             </div>
 
             {/* Supported Languages */}
             <div className="pt-6 border-t border-white/[0.06]">
-              <h3 className="text-sm font-medium text-white/60 mb-4">Communication Languages</h3>
+              <h3 className="text-sm font-medium text-white/60 mb-4">{t.settings.languages.supported_languages}</h3>
               <p className="text-sm text-white/40 mb-4">Languages enabled for AI scripts and client communications</p>
               <div className="flex flex-wrap gap-2">
-                {LANGUAGES.map((lang) => (
+                {languages.map((lang) => (
                   <button
                     key={lang.code}
                     onClick={() => {
@@ -225,8 +224,8 @@ export default function SettingsPage() {
     <div className="max-w-5xl mx-auto">
       {/* HEADER */}
       <div className="mb-8 pb-6 border-b border-white/[0.06]">
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="text-white/40 mt-1">Manage your account and preferences</p>
+        <h1 className="text-2xl font-semibold tracking-tight">{t.settings.title}</h1>
+        <p className="text-white/40 mt-1">{t.settings.subtitle}</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

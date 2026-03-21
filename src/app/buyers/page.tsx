@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
+import { useTranslation } from "@/lib/i18n";
 import { Badge } from "@/components/ui/Badge";
 import { Input } from "@/components/ui/Input";
 import { Progress } from "@/components/ui/Progress";
@@ -150,6 +151,7 @@ function getBuyerPriority(buyer: Buyer, finance: FinanceProfile | null | undefin
 
 export default function BuyersPage() {
   const router = useRouter();
+  const { t } = useTranslation();
   const [buyers, setBuyers] = useState<Buyer[]>([]);
   const [financeMap, setFinanceMap] = useState<Record<string, FinanceProfile | null | undefined>>({});
   const [loading, setLoading] = useState(true);
@@ -233,11 +235,11 @@ export default function BuyersPage() {
 
       {/* STATS STRIP */}
       <div className="grid grid-cols-5 gap-4 mb-6">
-        <StatCard icon={Users} value={stats.total} label="Total" />
-        <StatCard icon={ShieldCheck} value={stats.financeReady} label="Ready" color="emerald" />
-        <StatCard icon={Flame} value={stats.urgent} label="Urgent" color="red" />
-        <StatCard icon={TrendingUp} value={stats.committed} label="Committed" color="violet" />
-        <StatCard icon={AlertCircle} value={stats.blocked} label="Blocked" color="amber" />
+        <StatCard icon={Users} value={stats.total} label={t.buyers.stats.total} />
+        <StatCard icon={ShieldCheck} value={stats.financeReady} label={t.buyers.stats.ready} color="emerald" />
+        <StatCard icon={Flame} value={stats.urgent} label={t.buyers.stats.urgent} color="red" />
+        <StatCard icon={TrendingUp} value={stats.committed} label={t.buyers.stats.committed} color="violet" />
+        <StatCard icon={AlertCircle} value={stats.blocked} label={t.buyers.stats.blocked} color="amber" />
       </div>
 
       {/* FILTERS */}
@@ -245,7 +247,7 @@ export default function BuyersPage() {
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
           <Input
-            placeholder="Search by name, area, or budget..."
+            placeholder={t.buyers.search_placeholder}
             className="pl-11 bg-white/[0.03] border-white/[0.06] focus:border-white/10"
           />
         </div>

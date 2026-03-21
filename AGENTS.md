@@ -1,6 +1,6 @@
-# MandateOS - Project Instructions
+# Dealock — Agent Instructions
 
-This file defines the working rules for all AI agents collaborating on the MandateOS project.
+This file defines the working rules for all AI agents collaborating on the Dealock project.
 
 ---
 
@@ -50,44 +50,49 @@ The following git commands must NEVER be used unless explicitly requested by the
 
 ## 4. PRODUCT RULES
 
-### What This Project Is
+### What Dealock Is
 
-- **Name:** MandateOS
-- **Type:** AI-powered seller mandate operating system for real estate agents
-- **MVP Scope:**
-  - Seller leads management
-  - Mandates tracking
-  - Exclusivity logic
-  - Follow-up workflows
-  - Activity management
+- **Name:** Dealock
+- **Type:** AI-powered commercial real estate operating system for elite agents
+- **Core Layers (5):**
+  1. Seller Intelligence — mandate conversion, strategic guidance
+  2. Buyer Qualification — readiness tracking, criteria matching
+  3. Match Intelligence — opportunity identification, fit scoring
+  4. Mandate Management — exclusivity tracking, activation
+  5. Finance Readiness — buyer qualification, document tracking
 
-### What This Project Is NOT
+### What Dealock Is NOT
 
 - It is NOT a scraping bot
 - It is NOT an unsolicited bulk WhatsApp sender
+- It is NOT a generic CRM
+- It is NOT a property listing site
 
 ### Language & Localization Requirements
 
-- Must support: French, Portuguese, and English
-- The commercial logic must stay consistent across all 3 languages
+- Must support: English (EN), French (FR), Portuguese (PT), Spanish (ES)
+- Russian (RU) planned for future
+- The commercial logic must stay consistent across all languages
 
 ### Ethics & Compliance
 
 - No fake buyer claims
 - No invented offers
 - No deceptive claims
+- No manipulation of sellers or buyers
 
 ---
 
 ## 5. DESIGN RULES
 
-- Premium aesthetic
-- Executive styling
-- Minimal interface
-- Clean spacing
-- Strong readability
-- No clutter
-- No gimmicks
+- **Premium aesthetic** — executive-level quality
+- **Dark theme** — #0d0d0f base, elegant contrasts
+- **Minimal interface** — high signal, low noise
+- **Clean spacing** — breathing room is intentional
+- **Strong readability** — clarity first
+- **No clutter** — every element earns its place
+- **No gimmicks** — no trends that age poorly
+- **Guided UX** — user should know what to do next
 
 ---
 
@@ -97,8 +102,10 @@ The following git commands must NEVER be used unless explicitly requested by the
 - Prefer simple and maintainable solutions
 - Avoid overengineering
 - Keep the app modular
-- Keep naming clear
+- Keep naming clear and consistent
 - Build production-ready foundations
+- Don't break existing patterns without good reason
+- Preserve the premium feel in every change
 
 ---
 
@@ -114,4 +121,21 @@ After any requested phase, the agent must:
 
 ---
 
-*This document is the single source of truth for AI agent behavior on the MandateOS project.*
+## 8. PROJECT CONTEXT
+
+When working on Dealock, remember:
+
+- **Product evolved:** Started as MandateOS, expanded to full Dealock platform
+- **Detail pages are strategic:** Seller Detail and Buyer Detail are core cockpits
+- **Multilingual is active:** UI translations exist for EN/FR/PT/ES
+- **Sidebar branding:** Uses approved Dealock symbol asset
+- **Architecture:** Next.js + TypeScript + Tailwind + Supabase scaffold
+
+For full context, see:
+- `PROJECT_CONTEXT.md` — what Dealock is today
+- `PRODUCT_MEMORY.md` — decisions already made
+- `ROADMAP.md` — what's done and what's next
+
+---
+
+*This document is the single source of truth for AI agent behavior on the Dealock project.*

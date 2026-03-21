@@ -38,6 +38,9 @@ import { getLeadById, getActivitiesByLeadId, getMandateByLeadId } from "@/lib/da
 import { getLeadIntelligence } from "@/lib/intelligence/mock-intelligence";
 import { Lead, Activity, Mandate, LeadStatus, MandateStatus, ActivityType } from "@/types/database";
 import { SellerIntelligence } from "@/types/seller-intelligence";
+import { EditDrawer } from "@/components/ui/EditDrawer";
+import { SellerEditPanel } from "@/components/sellers/SellerEditPanel";
+import { useTranslation } from "@/lib/i18n";
 
 // ============================================
 // STATUS MAPS
@@ -99,6 +102,7 @@ const formatPrice = (price: number) => {
 export default function SellerDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { t } = useTranslation();
   const leadId = params.id as string;
   
   const [lead, setLead] = useState<Lead | null>(null);
@@ -106,6 +110,9 @@ export default function SellerDetailPage() {
   const [mandate, setMandate] = useState<Mandate | null>(null);
   const [intelligence, setIntelligence] = useState<SellerIntelligence | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isEditDrawerOpen, setIsEditDrawerOpen] = useState(false);
+  const [editedLead, setEditedLead] = useState<Lead | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     async function loadData() {
@@ -145,7 +152,7 @@ export default function SellerDetailPage() {
         <Link href="/sellers" className="mt-4">
           <Button variant="ghost" size="sm" className="gap-2">
             <ArrowLeft className="w-4 h-4" />
-            Back to Sellers
+            {t.leads.back_to}
           </Button>
         </Link>
       </div>
@@ -165,13 +172,21 @@ export default function SellerDetailPage() {
           </Button>
         </Link>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-2 border-white/10 hover:bg-white/[0.04]">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="gap-2 border-white/10 hover:bg-white/[0.04]"
+            onClick={() => {
+              setEditedLead(lead);
+              setIsEditDrawerOpen(true);
+            }}
+          >
             <Edit3 className="w-4 h-4" />
-            Edit
+            {t.leads.edit}
           </Button>
           <Button variant="outline" size="sm" className="gap-2 border-white/10 hover:bg-white/[0.04]">
             <Sparkles className="w-4 h-4" />
-            Refresh Analysis
+            {t.leads.refresh_analysis}
           </Button>
         </div>
       </div>
@@ -205,15 +220,15 @@ export default function SellerDetailPage() {
 
             {/* Center: Value */}
             <div className="lg:text-center lg:px-8 lg:border-x border-white/[0.06]">
-              <p className="text-sm text-white/40 mb-1">Property Value</p>
+              <p className="text-sm text-white/40 mb-1">{t.leads.property_value}</p>
               <p className="text-3xl font-semibold tracking-tight">{formatPrice(lead.price)}</p>
-              <p className="text-sm text-white/50 mt-1">{lead.area_m2}m² · {lead.bedrooms || 0} beds</p>
+              <p className="text-sm text-white/50 mt-1">{lead.area_m2}m² · {lead.bedrooms || 0} {t.leads.beds}</p>
             </div>
             
             {/* Right: Readiness */}
             {intelligence && (
               <div className="lg:text-right">
-                <p className="text-sm text-white/40 mb-2">Mandate Readiness</p>
+                <p className="text-sm text-white/40 mb-2">{t.leads.mandate_readiness}</p>
                 <div className="flex items-center lg:justify-end gap-3">
                   <div className="w-32 h-2 bg-white/[0.08] rounded-full overflow-hidden">
                     <div 
@@ -508,6 +523,33 @@ export default function SellerDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Edit Drawer */}
+      {editedLead && (
+        <EditDrawer
+          isOpen={isEditDrawerOpen}
+          onClose={() => {
+            setIsEditDrawerOpen(false);
+            setEditedLead(null);
+          }}
+          title="Edit Seller"
+          subtitle={`Editing ${lead.owner_name}`}
+          onSave={async () => {
+            setIsSaving(true);
+            // Simulate API call - in production, this would call your backend
+            await new Promise(resolve => setTimeout(resolve, 500));
+            setLead(editedLead);
+            setIsSaving(false);
+            setIsEditDrawerOpen(false);
+          }}
+          isSaving={isSaving}
+        >
+          <SellerEditPanel
+            seller={editedLead}
+            onChange={setEditedLead}
+          />
+        </EditDrawer>
+      )}
     </div>
   );
 }
