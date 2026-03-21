@@ -1,0 +1,751 @@
+"use client";
+
+import { useParams, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/Button";
+import { Badge } from "@/components/ui/Badge";
+import { Progress } from "@/components/ui/Progress";
+import { 
+  ArrowLeft, 
+  Phone, 
+  Mail, 
+  MessageSquare, 
+  Calendar, 
+  MapPin,
+  Clock,
+  Sparkles,
+  Target,
+  TrendingUp,
+  CheckCircle,
+  AlertTriangle,
+  Zap,
+  User,
+  Wallet,
+  Building2,
+  BedDouble,
+  Maximize,
+  Edit3,
+  Send,
+  Home,
+  Puzzle,
+  ShieldCheck,
+  AlertCircle,
+  FileCheck,
+  FileX,
+  Euro,
+  Search,
+  MessageCircle
+} from "lucide-react";
+import Link from "next/link";
+import { getBuyerById, getActivitiesByBuyerId, getMatches, getLeads, getFinanceProfileByBuyer } from "@/lib/data";
+import { Buyer, Activity, MatchOpportunity, Lead, FinanceProfile, BuyerStatus } from "@/types/database";
+
+// ============================================
+// STATUS MAPS
+// ============================================
+
+const statusMap: Record<BuyerStatus, { label: string; color: string; description: string }> = {
+  new: { label: "New", color: "bg-white/10 text-white/70", description: "Initial qualification needed" },
+  contacted: { label: "Contacted", color: "bg-amber-500/20 text-amber-400", description: "Awaiting response" },
+  qualified: { label: "Qualified", color: "bg-blue-500/20 text-blue-400", description: "Criteria confirmed" },
+  viewing_scheduled: { label: "Viewing", color: "bg-violet-500/20 text-violet-400", description: "Property tours booked" },
+  offer_pending: { label: "Offer", color: "bg-orange-500/20 text-orange-400", description: "Offer in negotiation" },
+  closed: { label: "Closed", color: "bg-emerald-500/20 text-emerald-400", description: "Purchase completed" },
+  inactive: { label: "Inactive", color: "bg-red-500/20 text-red-400", description: "Paused or lost" },
+};
+
+const seriousnessMap = {
+  low: { label: "Browsing", color: "text-white/40", bg: "bg-white/[0.04]" },
+  medium: { label: "Interested", color: "text-amber-400", bg: "bg-amber-500/10" },
+  high: { label: "Serious", color: "text-emerald-400", bg: "bg-emerald-500/10" },
+  very_high: { label: "Committed", color: "text-violet-400", bg: "bg-violet-500/10" },
+};
+
+const timelineMap = {
+  browsing: { label: "Just browsing", color: "text-white/40" },
+  '3_months': { label: "Within 3 months", color: "text-amber-400" },
+  '1_month': { label: "Within 1 month", color: "text-emerald-400" },
+  immediate: { label: "Immediate", color: "text-violet-400" },
+};
+
+const documentLabels: Record<string, string> = {
+  id_document: "ID Document",
+  proof_income: "Proof of Income",
+  bank_statements: "Bank Statements",
+  tax_returns: "Tax Returns",
+  employment_contract: "Employment Contract",
+  existing_property_docs: "Property Documents",
+  loan_pre_approval: "Loan Pre-approval",
+};
+
+// ============================================
+// FORMAT HELPERS
+// ============================================
+
+const formatCurrency = (amount: number) => {
+  return new Intl.NumberFormat('en-EU', {
+    style: 'currency',
+    currency: 'EUR',
+    maximumFractionDigits: 0,
+  }).format(amount);
+};
+
+// ============================================
+// MAIN COMPONENT
+// ============================================
+
+export default function BuyerDetailPage() {
+  const params = useParams();
+  const router = useRouter();
+  const buyerId = params.id as string;
+  
+  const [buyer, setBuyer] = useState<Buyer | null>(null);
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [finance, setFinance] = useState<FinanceProfile | null>(null);
+  const [matches, setMatches] = useState<MatchOpportunity[]>([]);
+  const [leads, setLeads] = useState<Record<string, Lead>>({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadData() {
+      const [buyerData, activitiesData, financeData, matchesData, leadsData] = await Promise.all([
+        getBuyerById(buyerId),
+        getActivitiesByBuyerId(buyerId),
+        getFinanceProfileByBuyer(buyerId),
+        getMatches(),
+        getLeads(),
+      ]);
+      
+      setBuyer(buyerData);
+      setActivities(activitiesData);
+      setFinance(financeData);
+      
+      // Filter matches for this buyer
+      const buyerMatches = matchesData.filter(m => m.buyer_id === buyerId);
+      setMatches(buyerMatches);
+      
+      // Create leads map for match display
+      setLeads(leadsData.reduce((acc, l) => ({ ...acc, [l.id]: l }), {}));
+      
+      setLoading(false);
+    }
+    loadData();
+  }, [buyerId]);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[60vh]">
+        <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="text-white/50 text-sm">Loading buyer profile...</p>
+      </div>
+    );
+  }
+
+  if (!buyer) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[60vh]">
+        <p className="text-white/50">Buyer not found</p>
+        <Link href="/buyers" className="mt-4">
+          <Button variant="ghost" size="sm" className="gap-2">
+            <ArrowLeft className="w-4 h-4" />
+            Back to Buyers
+          </Button>
+        </Link>
+      </div>
+    );
+  }
+
+  const status = statusMap[buyer.status];
+  const seriousness = seriousnessMap[buyer.seriousness];
+  const timeline = timelineMap[buyer.timeline];
+
+  return (
+    <div className="max-w-7xl mx-auto">
+      {/* Navigation */}
+      <div className="flex items-center justify-between mb-6">
+        <Link href="/buyers">
+          <Button variant="ghost" size="sm" className="gap-2 text-white/60 hover:text-white hover:bg-white/[0.04]">
+            <ArrowLeft className="w-4 h-4" />
+            Back to Buyers
+          </Button>
+        </Link>
+        <Button variant="outline" size="sm" className="gap-2 border-white/10 hover:bg-white/[0.04]">
+          <Edit3 className="w-4 h-4" />
+          Edit Profile
+        </Button>
+      </div>
+
+      {/* HERO STRIP */}
+      <section className="mb-8">
+        <div className="surface-elevated rounded-2xl p-6">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+            {/* Left: Identity */}
+            <div className="flex-1">
+              <div className="flex items-center gap-3 mb-3">
+                <Badge className={`${status.color} border-0`}>
+                  {status.label}
+                </Badge>
+                <Badge className={`${seriousness.bg} ${seriousness.color} border-0`}>
+                  {seriousness.label}
+                </Badge>
+                {buyer.pre_approved && (
+                  <Badge className="bg-blue-500/20 text-blue-400 border-0">
+                    Pre-approved
+                  </Badge>
+                )}
+              </div>
+              
+              <h1 className="text-3xl font-semibold tracking-tight mb-2">
+                {buyer.name}
+              </h1>
+              <div className="flex items-center gap-2 text-white/60">
+                <MapPin className="w-4 h-4" />
+                <span>Targeting: {buyer.target_areas.slice(0, 2).join(', ')}</span>
+                {buyer.target_areas.length > 2 && (
+                  <span className="text-white/40">+{buyer.target_areas.length - 2} more</span>
+                )}
+              </div>
+            </div>
+
+            {/* Center: Budget */}
+            <div className="lg:text-center lg:px-8 lg:border-x border-white/[0.06]">
+              <p className="text-sm text-white/40 mb-1">Budget Range</p>
+              <p className="text-3xl font-semibold tracking-tight">
+                {formatCurrency(buyer.budget_min)} - {formatCurrency(buyer.budget_max)}
+              </p>
+              <p className="text-sm text-white/50 mt-1">
+                Timeline: <span className={timeline.color}>{timeline.label}</span>
+              </p>
+            </div>
+            
+            {/* Right: Finance Readiness */}
+            <div className="lg:text-right">
+              <p className="text-sm text-white/40 mb-2">Finance Readiness</p>
+              {finance ? (
+                <>
+                  <div className="flex items-center lg:justify-end gap-3">
+                    <div className="w-32 h-2 bg-white/[0.08] rounded-full overflow-hidden">
+                      <div 
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          finance.completion_percentage > 80 ? 'bg-emerald-400' :
+                          finance.completion_percentage > 50 ? 'bg-amber-400' : 'bg-white/40'
+                        }`}
+                        style={{ width: `${finance.completion_percentage}%` }}
+                      />
+                    </div>
+                    <span className="text-2xl font-semibold">{finance.completion_percentage}%</span>
+                  </div>
+                  <p className="text-xs text-white/40 mt-1.5">
+                    {finance.status === 'strong_buyer' ? 'Strong buyer position' :
+                     finance.status === 'ready_to_progress' ? 'Ready to make offers' :
+                     finance.status === 'under_review' ? 'Documents under review' :
+                     'Documentation needed'}
+                  </p>
+                </>
+              ) : (
+                <p className="text-white/40">No finance profile</p>
+              )}
+            </div>
+          </div>
+
+          {/* Quick Actions Bar */}
+          <div className="flex flex-wrap items-center gap-2 mt-6 pt-6 border-t border-white/[0.06]">
+            <ActionButton icon={Phone} label="Call" />
+            <ActionButton icon={Mail} label="Email" />
+            <ActionButton icon={MessageSquare} label="WhatsApp" />
+            <ActionButton icon={Calendar} label="Schedule Viewing" />
+            <div className="flex-1" />
+            <Button size="sm" className="gap-2 bg-white text-black hover:bg-white/90">
+              <Puzzle className="w-4 h-4" />
+              Find Matches
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      {/* MAIN GRID */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        
+        {/* LEFT COLUMN: Qualification & Opportunities */}
+        <div className="lg:col-span-8 space-y-8">
+          
+          {/* Buyer Qualification */}
+          <section className="surface-elevated rounded-2xl p-6">
+            <SectionHeader 
+              icon={Target} 
+              title="Qualification Profile" 
+              subtitle="Buyer criteria and search preferences"
+            />
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+              <QualificationCard 
+                label="Seriousness"
+                value={seriousness.label}
+                icon={TrendingUp}
+                color={buyer.seriousness === 'very_high' || buyer.seriousness === 'high' ? 'positive' : 'neutral'}
+              />
+              <QualificationCard 
+                label="Timeline"
+                value={timeline.label}
+                icon={Clock}
+                color={buyer.timeline === 'immediate' ? 'positive' : 'neutral'}
+              />
+              <QualificationCard 
+                label="Buyer Type"
+                value={buyer.buyer_type.replace('_', ' ')}
+                icon={User}
+                color="neutral"
+              />
+              <QualificationCard 
+                label="Status"
+                value={status.label}
+                icon={CheckCircle}
+                color={buyer.status === 'qualified' || buyer.status === 'viewing_scheduled' ? 'positive' : 'neutral'}
+              />
+            </div>
+
+            {/* Search Criteria */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+                <div className="flex items-center gap-2 mb-3">
+                  <Home className="w-4 h-4 text-white/40" />
+                  <span className="text-sm font-medium">Property Preferences</span>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex flex-wrap gap-2">
+                    {buyer.property_types.map((type, i) => (
+                      <Badge key={i} variant="outline" className="border-white/10">
+                        {type}
+                      </Badge>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-4 text-sm text-white/60">
+                    {buyer.min_bedrooms && (
+                      <span className="flex items-center gap-1">
+                        <BedDouble className="w-3.5 h-3.5" />
+                        Min {buyer.min_bedrooms} beds
+                      </span>
+                    )}
+                    {buyer.min_area_m2 && (
+                      <span className="flex items-center gap-1">
+                        <Maximize className="w-3.5 h-3.5" />
+                        Min {buyer.min_area_m2}m²
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+                <div className="flex items-center gap-2 mb-3">
+                  <MapPin className="w-4 h-4 text-white/40" />
+                  <span className="text-sm font-medium">Target Areas</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {buyer.target_areas.map((area, i) => (
+                    <Badge key={i} variant="outline" className="border-white/10">
+                      {area}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Blockers */}
+            {buyer.notes && (
+              <div className="mt-4 pt-4 border-t border-white/[0.06]">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertCircle className="w-4 h-4 text-amber-400" />
+                  <span className="text-xs text-white/40 uppercase tracking-wider">Notes / Blockers</span>
+                </div>
+                <p className="text-sm text-white/70">{buyer.notes}</p>
+              </div>
+            )}
+          </section>
+
+          {/* Finance Readiness */}
+          {finance && (
+            <section className="surface-elevated rounded-2xl p-6">
+              <SectionHeader 
+                icon={ShieldCheck} 
+                title="Finance Readiness" 
+                subtitle="Documentation and affordability assessment"
+              />
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <FinanceMetric 
+                  label="Annual Income"
+                  value={formatCurrency(finance.annual_income || 0)}
+                />
+                <FinanceMetric 
+                  label="Down Payment"
+                  value={formatCurrency(finance.available_down_payment || 0)}
+                />
+                <FinanceMetric 
+                  label="Max Budget"
+                  value={formatCurrency(finance.estimated_max_budget || 0)}
+                />
+                <FinanceMetric 
+                  label="Monthly Payment"
+                  value={formatCurrency(finance.estimated_monthly_payment || 0)}
+                />
+              </div>
+
+              {/* Document Status */}
+              <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-sm font-medium">Document Checklist</span>
+                  <span className="text-sm text-white/50">{finance.completion_percentage}% complete</span>
+                </div>
+                <Progress value={finance.completion_percentage} className="h-2 mb-4" />
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                  {finance.documents.map((doc, i) => (
+                    <div 
+                      key={i}
+                      className={`flex items-center gap-2 p-2 rounded-lg text-sm ${
+                        doc.present 
+                          ? 'bg-emerald-500/10 text-emerald-400' 
+                          : 'bg-white/[0.03] text-white/40'
+                      }`}
+                    >
+                      {doc.present ? (
+                        <FileCheck className="w-4 h-4" />
+                      ) : (
+                        <FileX className="w-4 h-4" />
+                      )}
+                      <span>{documentLabels[doc.type] || doc.type}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Missing Documents */}
+              {finance.missing_documents.length > 0 && (
+                <div className="mt-4 p-4 rounded-xl bg-amber-500/[0.03] border border-amber-500/10">
+                  <div className="flex items-center gap-2 mb-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-400" />
+                    <span className="text-sm font-medium text-amber-400">Missing Documents</span>
+                  </div>
+                  <p className="text-sm text-white/60">
+                    {finance.missing_documents.map(d => documentLabels[d] || d).join(', ')}
+                  </p>
+                </div>
+              )}
+
+              {/* Recommended Actions */}
+              {finance.recommended_actions.length > 0 && finance.recommended_actions[0] !== 'Proceed with confidence' && (
+                <div className="mt-4 pt-4 border-t border-white/[0.06]">
+                  <p className="text-xs text-white/40 uppercase tracking-wider mb-2">Recommended Actions</p>
+                  <div className="flex flex-wrap gap-2">
+                    {finance.recommended_actions.map((action, i) => (
+                      <span key={i} className="px-3 py-1.5 rounded-lg bg-white/[0.04] text-white/60 text-sm">
+                        {action}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* Match Opportunities */}
+          <section>
+            <SectionHeader 
+              icon={Puzzle}
+              title="Match Opportunities"
+              subtitle="Properties matching this buyer's criteria"
+            />
+            {matches.length > 0 ? (
+              <div className="space-y-3">
+                {matches.slice(0, 3).map((match) => {
+                  const lead = leads[match.seller_id];
+                  if (!lead) return null;
+                  
+                  return (
+                    <div 
+                      key={match.id}
+                      className="surface-subtle rounded-xl p-4 hover:bg-white/[0.04] transition-colors cursor-pointer"
+                      onClick={() => router.push(`/sellers/${lead.id}`)}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-white/[0.06] flex items-center justify-center">
+                            <Building2 className="w-5 h-5 text-white/50" />
+                          </div>
+                          <div>
+                            <p className="font-medium">{lead.neighborhood}</p>
+                            <p className="text-sm text-white/40">
+                              {lead.property_type} · {formatCurrency(lead.price)}
+                            </p>
+                          </div>
+                        </div>
+                        <Badge className={`${
+                          match.match_score === 'excellent' ? 'bg-violet-500/20 text-violet-400' :
+                          match.match_score === 'good' ? 'bg-emerald-500/20 text-emerald-400' :
+                          'bg-amber-500/20 text-amber-400'
+                        } border-0`}>
+                          {match.match_score_value}% Match
+                        </Badge>
+                      </div>
+                      <div className="mt-3 pt-3 border-t border-white/[0.04]">
+                        <p className="text-sm text-white/50">{match.recommended_action}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <EmptyState 
+                icon={Search} 
+                message="No matches found yet" 
+                action="Browse sellers to find matches"
+              />
+            )}
+          </section>
+
+          {/* Activity Timeline */}
+          <section>
+            <SectionHeader 
+              icon={Clock}
+              title="Activity Timeline"
+              subtitle="Recent interactions"
+            />
+            <div className="space-y-1">
+              {activities.length > 0 ? (
+                activities.map((activity) => (
+                  <ActivityItem key={activity.id} activity={activity} />
+                ))
+              ) : (
+                <EmptyState icon={Clock} message="No activity recorded yet" />
+              )}
+            </div>
+          </section>
+        </div>
+
+        {/* RIGHT COLUMN: Quick Actions & Context */}
+        <div className="lg:col-span-4 space-y-6">
+          
+          {/* Communication Assistance */}
+          <div className="surface-elevated rounded-2xl p-6">
+            <SectionHeader 
+              icon={MessageCircle}
+              title="Communication"
+              compact
+            />
+            
+            <div className="space-y-4">
+              <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+                <p className="text-xs text-white/40 uppercase tracking-wider mb-2">Suggested Message</p>
+                <p className="text-sm text-white/70 leading-relaxed">
+                  "Hi {buyer.name.split(' ')[0]}, I found a {buyer.property_types[0] || 'property'} in {buyer.target_areas[0] || 'your target area'} that matches your criteria. Would you like to schedule a viewing?"
+                </p>
+                <Button variant="ghost" size="sm" className="mt-3 gap-2 text-white/50 hover:text-white">
+                  <Send className="w-3.5 h-3.5" />
+                  Copy Message
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                <ActionRow icon={Phone} label="Call to discuss options" />
+                <ActionRow icon={Calendar} label="Schedule property tour" />
+                <ActionRow icon={Mail} label="Send market update" />
+              </div>
+            </div>
+          </div>
+
+          {/* Next Action */}
+          {buyer.next_action && (
+            <div className="surface-elevated rounded-2xl p-6">
+              <SectionHeader 
+                icon={Zap}
+                title="Next Action"
+                compact
+              />
+              <p className="text-white/80 mb-2">{buyer.next_action}</p>
+              {buyer.next_action_date && (
+                <p className="text-sm text-white/50">
+                  Due: {new Date(buyer.next_action_date).toLocaleDateString()}
+                </p>
+              )}
+              <Button className="w-full mt-4 gap-2 bg-white text-black hover:bg-white/90">
+                <CheckCircle className="w-4 h-4" />
+                Mark Complete
+              </Button>
+            </div>
+          )}
+
+          {/* Cash Buyer Badge */}
+          {buyer.cash_buyer && (
+            <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+                  <Wallet className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div>
+                  <p className="font-medium text-emerald-400">Cash Buyer</p>
+                  <p className="text-sm text-emerald-400/70">No financing needed</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Contact Info */}
+          <div className="surface-subtle rounded-2xl p-6">
+            <SectionHeader 
+              icon={User}
+              title="Contact Information"
+              compact
+            />
+            <div className="space-y-3">
+              <ContactItem icon={Mail} label="Email" value={buyer.email} />
+              <ContactItem icon={Phone} label="Phone" value={buyer.phone} />
+              <ContactItem icon={MapPin} label="Preferred Language" value={buyer.language_preference.toUpperCase()} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// HELPER COMPONENTS
+// ============================================
+
+function ActionButton({ icon: Icon, label }: { icon: React.ElementType; label: string }) {
+  return (
+    <Button size="sm" variant="outline" className="gap-2 border-white/10 hover:bg-white/[0.04]">
+      <Icon className="w-4 h-4" />
+      {label}
+    </Button>
+  );
+}
+
+function SectionHeader({ 
+  icon: Icon, 
+  title, 
+  subtitle,
+  compact = false
+}: { 
+  icon: React.ElementType; 
+  title: string; 
+  subtitle?: string;
+  compact?: boolean;
+}) {
+  return (
+    <div className={`flex items-center gap-3 ${compact ? 'mb-4' : 'mb-6'}`}>
+      <div className="w-10 h-10 rounded-xl bg-white/[0.06] flex items-center justify-center">
+        <Icon className="w-5 h-5 text-white" />
+      </div>
+      <div>
+        <h2 className="font-medium">{title}</h2>
+        {subtitle && <p className="text-sm text-white/40">{subtitle}</p>}
+      </div>
+    </div>
+  );
+}
+
+function QualificationCard({ 
+  label, 
+  value, 
+  icon: Icon,
+  color 
+}: { 
+  label: string; 
+  value: string; 
+  icon: React.ElementType;
+  color: 'neutral' | 'positive';
+}) {
+  const colors = {
+    neutral: 'bg-white/[0.04] text-white/80 border-white/[0.06]',
+    positive: 'bg-emerald-500/[0.08] text-emerald-400 border-emerald-500/20',
+  };
+
+  return (
+    <div className={`p-4 rounded-xl border ${colors[color]}`}>
+      <div className="flex items-center gap-2 mb-2">
+        <Icon className="w-4 h-4 opacity-60" />
+        <p className="text-[10px] uppercase tracking-wider opacity-60">{label}</p>
+      </div>
+      <p className="text-sm font-medium">{value}</p>
+    </div>
+  );
+}
+
+function FinanceMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="p-3 rounded-lg bg-white/[0.03]">
+      <p className="text-xs text-white/40 mb-1">{label}</p>
+      <p className="text-lg font-medium">{value}</p>
+    </div>
+  );
+}
+
+function ActivityItem({ activity }: { activity: Activity }) {
+  return (
+    <div className="flex items-start gap-4 p-4 rounded-xl hover:bg-white/[0.02] transition-colors group surface-subtle">
+      <div className="w-2 h-2 rounded-full bg-white/20 mt-2" />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between">
+          <p className="font-medium">{activityTypeMap[activity.type]?.label || activity.type}</p>
+          <span className="text-xs text-white/30">
+            {new Date(activity.created_at).toLocaleDateString()}
+          </span>
+        </div>
+        <p className="text-sm text-white/50 mt-0.5">{activity.content}</p>
+      </div>
+    </div>
+  );
+}
+
+function ActionRow({ icon: Icon, label }: { icon: React.ElementType; label: string }) {
+  return (
+    <Button variant="ghost" className="w-full justify-start gap-3 text-white/60 hover:text-white hover:bg-white/[0.04]">
+      <Icon className="w-4 h-4" />
+      {label}
+    </Button>
+  );
+}
+
+function ContactItem({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-3">
+      <Icon className="w-4 h-4 text-white/30" />
+      <div>
+        <p className="text-xs text-white/40">{label}</p>
+        <p className="text-sm text-white">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({ 
+  icon: Icon, 
+  message,
+  action
+}: { 
+  icon: React.ElementType; 
+  message: string;
+  action?: string;
+}) {
+  return (
+    <div className="text-center py-12 text-white/30 surface-subtle rounded-xl">
+      <Icon className="w-8 h-8 mx-auto mb-3 opacity-50" />
+      <p className="text-sm">{message}</p>
+      {action && <p className="text-xs text-white/20 mt-1">{action}</p>}
+    </div>
+  );
+}
+
+const activityTypeMap: Record<string, { label: string }> = {
+  call: { label: "Call" },
+  email: { label: "Email" },
+  whatsapp: { label: "WhatsApp" },
+  meeting: { label: "Meeting" },
+  note: { label: "Note" },
+  mandate: { label: "Mandate" },
+  lead: { label: "Lead" },
+  buyer: { label: "Buyer" },
+  match: { label: "Match" },
+  finance: { label: "Finance" },
+};

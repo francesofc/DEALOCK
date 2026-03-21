@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Input } from "@/components/ui/Input";
@@ -148,6 +149,7 @@ function getBuyerPriority(buyer: Buyer, finance: FinanceProfile | null | undefin
 }
 
 export default function BuyersPage() {
+  const router = useRouter();
   const [buyers, setBuyers] = useState<Buyer[]>([]);
   const [financeMap, setFinanceMap] = useState<Record<string, FinanceProfile | null | undefined>>({});
   const [loading, setLoading] = useState(true);
@@ -262,7 +264,7 @@ export default function BuyersPage() {
             <PriorityHeader icon={Flame} title="Urgent" count={urgentBuyers.length} color="red" />
             <div className="space-y-2">
               {urgentBuyers.map(buyer => (
-                <BuyerRow key={buyer.id} buyer={buyer} finance={financeMap[buyer.id]} />
+                <BuyerRow key={buyer.id} buyer={buyer} finance={financeMap[buyer.id]} onClick={() => router.push(`/buyers/${buyer.id}`)} />
               ))}
             </div>
           </section>
@@ -274,7 +276,7 @@ export default function BuyersPage() {
             <PriorityHeader icon={Zap} title="High Priority" count={highBuyers.length} color="orange" />
             <div className="space-y-2">
               {highBuyers.map(buyer => (
-                <BuyerRow key={buyer.id} buyer={buyer} finance={financeMap[buyer.id]} />
+                <BuyerRow key={buyer.id} buyer={buyer} finance={financeMap[buyer.id]} onClick={() => router.push(`/buyers/${buyer.id}`)} />
               ))}
             </div>
           </section>
@@ -286,7 +288,7 @@ export default function BuyersPage() {
             <PriorityHeader icon={Target} title="Active" count={normalBuyers.length} color="blue" />
             <div className="space-y-2">
               {normalBuyers.slice(0, 5).map(buyer => (
-                <BuyerRow key={buyer.id} buyer={buyer} finance={financeMap[buyer.id]} />
+                <BuyerRow key={buyer.id} buyer={buyer} finance={financeMap[buyer.id]} onClick={() => router.push(`/buyers/${buyer.id}`)} />
               ))}
             </div>
           </section>
@@ -298,7 +300,7 @@ export default function BuyersPage() {
             <PriorityHeader icon={Clock} title="Nurture" count={lowBuyers.length} color="default" />
             <div className="space-y-2">
               {lowBuyers.slice(0, 3).map(buyer => (
-                <BuyerRow key={buyer.id} buyer={buyer} finance={financeMap[buyer.id]} />
+                <BuyerRow key={buyer.id} buyer={buyer} finance={financeMap[buyer.id]} onClick={() => router.push(`/buyers/${buyer.id}`)} />
               ))}
             </div>
           </section>
@@ -329,10 +331,12 @@ export default function BuyersPage() {
 
 function BuyerRow({ 
   buyer, 
-  finance 
+  finance,
+  onClick
 }: { 
   buyer: Buyer; 
   finance: FinanceProfile | null | undefined;
+  onClick?: () => void;
 }) {
   const status = statusMap[buyer.status];
   const seriousness = seriousnessMap[buyer.seriousness];
@@ -349,7 +353,10 @@ function BuyerRow({
   };
   
   return (
-    <div className="group p-4 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:border-white/[0.08] hover:bg-white/[0.03] transition-all cursor-pointer">
+    <div 
+      className="group p-4 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:border-white/[0.08] hover:bg-white/[0.03] transition-all cursor-pointer"
+      onClick={onClick}
+    >
       <div className="flex items-center gap-4">
         {/* Seriousness Avatar */}
         <div className={`w-11 h-11 rounded-xl ${seriousness.bg} flex items-center justify-center shrink-0`}>
