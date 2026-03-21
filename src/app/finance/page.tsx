@@ -19,15 +19,15 @@ import {
   TrendingUp,
   AlertTriangle,
   ShieldCheck,
-  Zap
+  Zap,
+  Users
 } from "lucide-react";
 import { getFinanceProfiles, getBuyers } from "@/lib/data";
 import { FinanceProfile, Buyer, FinanceStatus } from "@/types/database";
 
 // ============================================
-// FINANCE READINESS LOGIC
+// FINANCE READINESS STATES
 // ============================================
-// Clear progression: incomplete → review → ready → strong
 
 const statusMap: Record<FinanceStatus, { 
   label: string; 
@@ -36,8 +36,8 @@ const statusMap: Record<FinanceStatus, {
   className: string;
   bg: string;
   border: string;
-  description: string;
   action: string;
+  actionIcon: React.ElementType;
 }> = {
   incomplete: { 
     label: "Incomplete", 
@@ -46,8 +46,8 @@ const statusMap: Record<FinanceStatus, {
     className: "text-amber-400", 
     bg: "bg-amber-500/10",
     border: "border-amber-500/20",
-    description: "Missing required documents",
-    action: "Request documents"
+    action: "Request documents",
+    actionIcon: ArrowRight
   },
   under_review: { 
     label: "Under Review", 
@@ -56,8 +56,8 @@ const statusMap: Record<FinanceStatus, {
     className: "text-blue-400", 
     bg: "bg-blue-500/10",
     border: "border-blue-500/20",
-    description: "Documents being verified",
-    action: "Follow up in 24h"
+    action: "Check status",
+    actionIcon: Clock
   },
   needs_clarification: { 
     label: "Needs Clarification", 
@@ -66,8 +66,8 @@ const statusMap: Record<FinanceStatus, {
     className: "text-orange-400", 
     bg: "bg-orange-500/10",
     border: "border-orange-500/20",
-    description: "Additional information required",
-    action: "Contact buyer"
+    action: "Contact buyer",
+    actionIcon: ArrowRight
   },
   ready_to_progress: { 
     label: "Ready to Progress", 
@@ -76,8 +76,8 @@ const statusMap: Record<FinanceStatus, {
     className: "text-emerald-400", 
     bg: "bg-emerald-500/10",
     border: "border-emerald-500/20",
-    description: "Cleared to make offers",
-    action: "Present opportunities"
+    action: "Present deals",
+    actionIcon: Zap
   },
   strong_buyer: { 
     label: "Strong Buyer", 
@@ -86,8 +86,8 @@ const statusMap: Record<FinanceStatus, {
     className: "text-violet-400", 
     bg: "bg-violet-500/10",
     border: "border-violet-500/20",
-    description: "Excellent financial position",
-    action: "Priority matching"
+    action: "Priority matching",
+    actionIcon: TrendingUp
   },
 };
 
@@ -98,14 +98,13 @@ const affordabilityMap = {
   strong: { label: "Strong", color: "text-violet-400", bg: "bg-violet-500/10" },
 };
 
-// Document type labels
 const documentLabels: Record<string, string> = {
   id_document: "ID",
   proof_income: "Income",
-  bank_statements: "Bank Statements",
-  tax_returns: "Tax Returns",
+  bank_statements: "Bank",
+  tax_returns: "Tax",
   employment_contract: "Employment",
-  existing_property_docs: "Property Docs",
+  existing_property_docs: "Property",
   loan_pre_approval: "Pre-approval",
 };
 
@@ -136,7 +135,7 @@ export default function FinancePage() {
     }).format(amount);
   };
 
-  // Calculate stats
+  // Stats
   const stats = {
     total: profiles.length,
     blocked: profiles.filter(p => p.status === 'incomplete' || p.status === 'needs_clarification').length,
@@ -145,13 +144,10 @@ export default function FinancePage() {
     strong: profiles.filter(p => p.status === 'strong_buyer').length,
   };
 
-  // Categorize profiles
+  // Group by status
   const blockedProfiles = profiles.filter(p => p.status === 'incomplete' || p.status === 'needs_clarification');
   const reviewProfiles = profiles.filter(p => p.status === 'under_review');
   const readyProfiles = profiles.filter(p => p.status === 'ready_to_progress' || p.status === 'strong_buyer');
-
-  // Sort each category by completion percentage
-  const sortByCompletion = (a: FinanceProfile, b: FinanceProfile) => b.completion_percentage - a.completion_percentage;
 
   if (loading) {
     return (
@@ -176,59 +172,33 @@ export default function FinancePage() {
         </Button>
       </div>
 
-      {/* READINESS PIPELINE STRIP */}
+      {/* PIPELINE STRIP */}
       <div className="grid grid-cols-5 gap-4 mb-8">
-        <PipelineCard 
-          icon={Wallet} 
-          value={stats.total} 
-          label="Total Profiles" 
-          color="default"
-        />
-        <PipelineCard 
-          icon={AlertTriangle} 
-          value={stats.blocked} 
-          label="Blocked" 
-          color="amber"
-        />
-        <PipelineCard 
-          icon={Clock} 
-          value={stats.inReview} 
-          label="In Review" 
-          color="blue"
-        />
-        <PipelineCard 
-          icon={CheckCircle} 
-          value={stats.ready} 
-          label="Ready" 
-          color="emerald"
-        />
-        <PipelineCard 
-          icon={ShieldCheck} 
-          value={stats.strong} 
-          label="Strong Buyers" 
-          color="violet"
-        />
+        <PipelineCard icon={Users} value={stats.total} label="Total" color="default" />
+        <PipelineCard icon={AlertTriangle} value={stats.blocked} label="Blocked" color="amber" />
+        <PipelineCard icon={Clock} value={stats.inReview} label="In Review" color="blue" />
+        <PipelineCard icon={CheckCircle} value={stats.ready} label="Ready" color="emerald" />
+        <PipelineCard icon={ShieldCheck} value={stats.strong} label="Strong" color="violet" />
       </div>
 
-      {/* MAIN CONTENT: Grouped by status */}
+      {/* PROFILES BY STATUS */}
       <div className="space-y-8">
         
-        {/* BLOCKED - Action Required */}
+        {/* BLOCKED */}
         {blockedProfiles.length > 0 && (
           <section>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
-                <AlertTriangle className="w-4 h-4 text-amber-400" />
-              </div>
-              <div>
-                <h2 className="font-medium">Action Required</h2>
-                <p className="text-sm text-white/40">{blockedProfiles.length} buyers blocked - documentation needed</p>
-              </div>
-            </div>
+            <StatusHeader 
+              icon={AlertTriangle}
+              title="Action Required"
+              subtitle={`${blockedProfiles.length} buyers blocked - documentation needed`}
+              color="amber"
+            />
             <div className="space-y-3">
-              {blockedProfiles.sort(sortByCompletion).map(profile => (
-                <FinanceCard key={profile.id} profile={profile} buyer={buyers[profile.buyer_id]} />
-              ))}
+              {blockedProfiles
+                .sort((a, b) => b.completion_percentage - a.completion_percentage)
+                .map(profile => (
+                  <FinanceCard key={profile.id} profile={profile} buyer={buyers[profile.buyer_id]} />
+                ))}
             </div>
           </section>
         )}
@@ -236,17 +206,14 @@ export default function FinancePage() {
         {/* IN REVIEW */}
         {reviewProfiles.length > 0 && (
           <section>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                <Clock className="w-4 h-4 text-blue-400" />
-              </div>
-              <div>
-                <h2 className="font-medium">Under Review</h2>
-                <p className="text-sm text-white/40">{reviewProfiles.length} profiles being verified</p>
-              </div>
-            </div>
+            <StatusHeader 
+              icon={Clock}
+              title="Under Review"
+              subtitle={`${reviewProfiles.length} profiles being verified`}
+              color="blue"
+            />
             <div className="space-y-3">
-              {reviewProfiles.sort(sortByCompletion).map(profile => (
+              {reviewProfiles.map(profile => (
                 <FinanceCard key={profile.id} profile={profile} buyer={buyers[profile.buyer_id]} />
               ))}
             </div>
@@ -256,19 +223,15 @@ export default function FinancePage() {
         {/* READY / STRONG */}
         {readyProfiles.length > 0 && (
           <section>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
-                <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              </div>
-              <div>
-                <h2 className="font-medium">Ready to Proceed</h2>
-                <p className="text-sm text-white/40">{readyProfiles.length} buyers cleared for transactions</p>
-              </div>
-            </div>
+            <StatusHeader 
+              icon={ShieldCheck}
+              title="Ready to Proceed"
+              subtitle={`${readyProfiles.length} buyers cleared for transactions`}
+              color="emerald"
+            />
             <div className="space-y-3">
               {readyProfiles
                 .sort((a, b) => {
-                  // Strong buyers first, then by max budget
                   if (a.status === 'strong_buyer' && b.status !== 'strong_buyer') return -1;
                   if (b.status === 'strong_buyer' && a.status !== 'strong_buyer') return 1;
                   return (b.estimated_max_budget || 0) - (a.estimated_max_budget || 0);
@@ -299,12 +262,16 @@ export default function FinancePage() {
   );
 }
 
-// Finance Card Component
+// ============================================
+// FINANCE CARD
+// ============================================
+
 function FinanceCard({ profile, buyer }: { profile: FinanceProfile; buyer: Buyer | undefined }) {
   if (!buyer) return null;
   
   const status = statusMap[profile.status];
   const StatusIcon = status.icon;
+  const ActionIcon = status.actionIcon;
   const affordability = profile.affordability_status ? affordabilityMap[profile.affordability_status] : null;
   
   const formatCurrency = (amount: number | null) => {
@@ -317,7 +284,7 @@ function FinanceCard({ profile, buyer }: { profile: FinanceProfile; buyer: Buyer
   };
   
   return (
-    <div className={`group p-5 rounded-2xl ${status.bg} ${status.border} border hover:brightness-110 transition-all`}>
+    <div className={`p-5 rounded-2xl ${status.bg} ${status.border} border hover:brightness-110 transition-all`}>
       {/* Header */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-4">
@@ -326,27 +293,31 @@ function FinanceCard({ profile, buyer }: { profile: FinanceProfile; buyer: Buyer
           </div>
           <div>
             <h3 className="font-medium">{buyer.name}</h3>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className={`text-sm ${status.className}`}>{status.shortLabel}</span>
+            <div className="flex items-center gap-2 mt-1">
+              <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.06]`}>
+                <StatusIcon className={`w-3.5 h-3.5 ${status.className}`} />
+                <span className={`text-xs font-medium ${status.className}`}>{status.shortLabel}</span>
+              </div>
               {buyer.pre_approved && (
                 <Badge className="bg-blue-500/20 text-blue-400 border-0 text-[10px]">
-                  Bank Pre-approved
+                  Pre-approved
                 </Badge>
               )}
             </div>
           </div>
         </div>
         
-        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.06]`}>
-          <StatusIcon className={`w-4 h-4 ${status.className}`} />
-          <span className={`text-sm font-medium ${status.className}`}>{status.label}</span>
+        {/* Max Budget */}
+        <div className="text-right">
+          <p className="text-2xl font-semibold">{formatCurrency(profile.estimated_max_budget)}</p>
+          <p className="text-xs text-white/40">max budget</p>
         </div>
       </div>
       
-      {/* Financials Grid */}
+      {/* Financial Grid */}
       <div className="grid grid-cols-4 gap-4 py-4 border-y border-white/[0.06]">
         <div>
-          <p className="text-xs text-white/40 uppercase tracking-wider mb-1">Annual Income</p>
+          <p className="text-xs text-white/40 uppercase tracking-wider mb-1">Income</p>
           <p className="text-lg font-medium">{formatCurrency(profile.annual_income)}</p>
         </div>
         <div>
@@ -354,8 +325,8 @@ function FinanceCard({ profile, buyer }: { profile: FinanceProfile; buyer: Buyer
           <p className="text-lg font-medium">{formatCurrency(profile.available_down_payment)}</p>
         </div>
         <div>
-          <p className="text-xs text-white/40 uppercase tracking-wider mb-1">Max Budget</p>
-          <p className="text-lg font-medium">{formatCurrency(profile.estimated_max_budget)}</p>
+          <p className="text-xs text-white/40 uppercase tracking-wider mb-1">Est. Monthly</p>
+          <p className="text-lg font-medium">{formatCurrency(profile.estimated_monthly_payment)}</p>
         </div>
         <div>
           <p className="text-xs text-white/40 uppercase tracking-wider mb-1">Position</p>
@@ -368,17 +339,17 @@ function FinanceCard({ profile, buyer }: { profile: FinanceProfile; buyer: Buyer
       {/* Documents & Action */}
       <div className="flex items-center justify-between mt-4">
         <div className="flex items-center gap-4">
-          {/* Document Progress */}
+          {/* Progress */}
           <div className="flex items-center gap-3">
-            <div className="w-32">
+            <div className="w-28">
               <Progress value={profile.completion_percentage} className="h-2" />
             </div>
             <span className="text-sm text-white/50">
-              {profile.completion_percentage}% complete
+              {profile.completion_percentage}%
             </span>
           </div>
           
-          {/* Missing Docs Preview */}
+          {/* Missing Docs */}
           {profile.missing_documents.length > 0 && (
             <div className="flex items-center gap-1.5">
               <AlertCircle className="w-4 h-4 text-amber-400" />
@@ -391,7 +362,7 @@ function FinanceCard({ profile, buyer }: { profile: FinanceProfile; buyer: Buyer
         </div>
         
         <Button size="sm" className="gap-1.5 bg-white text-black hover:bg-white/90">
-          <Zap className="w-3.5 h-3.5" />
+          <ActionIcon className="w-3.5 h-3.5" />
           {status.action}
         </Button>
       </div>
@@ -399,7 +370,9 @@ function FinanceCard({ profile, buyer }: { profile: FinanceProfile; buyer: Buyer
   );
 }
 
-// Helper Components
+// ============================================
+// HELPERS
+// ============================================
 
 function PipelineCard({ 
   icon: Icon, 
@@ -427,6 +400,36 @@ function PipelineCard({
       </div>
       <p className="text-xl font-semibold">{value}</p>
       <p className="text-xs text-white/40">{label}</p>
+    </div>
+  );
+}
+
+function StatusHeader({ 
+  icon: Icon,
+  title,
+  subtitle,
+  color
+}: { 
+  icon: React.ElementType;
+  title: string;
+  subtitle: string;
+  color: 'amber' | 'blue' | 'emerald';
+}) {
+  const colors = {
+    amber: "bg-amber-500/10 text-amber-400",
+    blue: "bg-blue-500/10 text-blue-400",
+    emerald: "bg-emerald-500/10 text-emerald-400",
+  };
+  
+  return (
+    <div className="flex items-center gap-3 mb-4">
+      <div className={`w-8 h-8 rounded-lg ${colors[color]} flex items-center justify-center`}>
+        <Icon className="w-4 h-4" />
+      </div>
+      <div>
+        <h2 className="font-medium">{title}</h2>
+        <p className="text-sm text-white/40">{subtitle}</p>
+      </div>
     </div>
   );
 }
