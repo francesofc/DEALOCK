@@ -19,7 +19,11 @@ import {
   UserCircle,
   Puzzle,
   Wallet,
-  CheckCircle
+  CheckCircle2,
+  Flame,
+  AlertTriangle,
+  Building2,
+  MapPin
 } from "lucide-react";
 import { 
   getLeads, 
@@ -54,6 +58,11 @@ const activityTypeMap: Record<ActivityType, { label: string }> = {
   finance: { label: "Finance" },
 };
 
+// ============================================
+// DECISION HIERARCHY
+// ============================================
+// Urgent Now → Important Today → Strategic Opportunities
+
 export default function CommandCenterPage() {
   const router = useRouter();
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -86,7 +95,7 @@ export default function CommandCenterPage() {
       // Load intelligence for priority sellers
       const priorityLeads = leadsData.filter(l => 
         ['qualified', 'replied', 'call_scheduled', 'mandate_proposed'].includes(l.status)
-      ).slice(0, 3);
+      ).slice(0, 5);
       
       const intelMap: Record<string, SellerIntelligence> = {};
       for (const lead of priorityLeads) {
@@ -100,74 +109,80 @@ export default function CommandCenterPage() {
   }, []);
 
   // ============================================
-  // METRICS ACROSS 5 LAYERS
+  // DECISION HIERARCHY CALCULATIONS
   // ============================================
-  
-  // Sellers layer
-  const urgentSellers = leads.filter(l => 
-    ['mandate_proposed', 'mandate_sent'].includes(l.status)
-  ).length;
-  
-  // Buyers layer
-  const qualifiedBuyers = buyers.filter(b => 
-    b.status === 'qualified' || b.status === 'viewing_scheduled'
-  ).length;
-  
-  // Match layer
-  const activeMatches = matches.filter(m => 
-    m.status !== 'archived' && m.status !== 'closed'
-  ).length;
-  
-  const highPriorityMatches = matches.filter(m => 
-    (m.priority === 'high' || m.priority === 'urgent') && m.status !== 'archived'
-  ).length;
-  
-  // Finance layer
-  const financeBlockers = financeProfiles.filter(f => 
-    f.status === 'incomplete' || f.status === 'needs_clarification'
-  ).length;
-  
-  const readyBuyers = financeProfiles.filter(f => 
-    f.status === 'ready_to_progress' || f.status === 'strong_buyer'
-  ).length;
-  
-  // Mandates layer
-  const pendingSignatures = mandates.filter(m => m.status === 'sent').length;
-  const activeMandates = mandates.filter(m => m.status === 'signed').length;
 
-  // ============================================
-  // PRIORITY ITEMS
-  // ============================================
-  
-  // Priority sellers
-  const prioritySellers = leads
-    .filter(l => ['qualified', 'replied', 'call_scheduled', 'mandate_proposed'].includes(l.status))
-    .sort((a, b) => {
-      const aIntel = intelligence[a.id];
-      const bIntel = intelligence[b.id];
-      const aScore = (aIntel?.mandate_readiness_score || 0) + ((a.priority_score || 0) * 20);
-      const bScore = (bIntel?.mandate_readiness_score || 0) + ((b.priority_score || 0) * 20);
-      return bScore - aScore;
-    })
-    .slice(0, 3);
+  // URGENT NOW: Actions requiring immediate attention
+  const urgentNow = [
+    // Mandates in closing stage
+    ...leads
+      .filter(l => ['mandate_proposed', 'mandate_sent'].includes(l.status))
+      .filter(l => {
+        const intel = intelligence[l.id];
+        return intel && intel.mandate_readiness_score > 60;
+      })
+      .map(l => ({ type: 'seller' as const, item: l, intel: intelligence[l.id] })),
+    
+    // Urgent matches
+    ...matches
+      .filter(m => m.priority === 'urgent' && m.status !== 'archived')
+      .slice(0, 2)
+      .map(m => ({ type: 'match' as const, item: m })),
+  ].slice(0, 4);
 
-  // High priority matches
-  const priorityMatches = matches
-    .filter(m => (m.priority === 'high' || m.priority === 'urgent') && m.status !== 'archived')
-    .slice(0, 2);
+  // IMPORTANT TODAY: Should act on today
+  const importantToday = [
+    // High-readiness sellers not yet urgent
+    ...leads
+      .filter(l => ['replied', 'call_scheduled'].includes(l.status))
+      .filter(l => {
+        const intel = intelligence[l.id];
+        return intel && intel.mandate_readiness_score > 50;
+      })
+      .filter(l => !urgentNow.find(u => u.type === 'seller' && u.item.id === l.id))
+      .slice(0, 3)
+      .map(l => ({ type: 'seller' as const, item: l, intel: intelligence[l.id] })),
+  ];
 
-  // Finance blockers
-  const blockedFinance = financeProfiles
-    .filter(f => f.status === 'incomplete' || f.status === 'needs_clarification')
-    .slice(0, 2);
+  // STRATEGIC OPPORTUNITIES: High value, not time-critical
+  const strategicOpportunities = [
+    // Excellent matches
+    ...matches
+      .filter(m => m.match_score === 'excellent' && m.status !== 'archived')
+      .filter(m => m.priority !== 'urgent')
+      .slice(0, 2)
+      .map(m => ({ type: 'match' as const, item: m })),
+  ];
 
-  // Today's focus actions (sellers + matches)
-  const todaysActions = prioritySellers
-    .filter(l => {
-      const intel = intelligence[l.id];
-      return intel?.suggested_timing === 'today' || intel?.suggested_timing === 'immediate';
-    })
-    .slice(0, 2);
+  // BLOCKERS: Things preventing progress
+  const blockers = [
+    // Finance blockers
+    ...financeProfiles
+      .filter(f => f.status === 'incomplete' || f.status === 'needs_clarification')
+      .slice(0, 2)
+      .map(f => ({ type: 'finance' as const, item: f })),
+  ];
+
+  // READY RESOURCES: Buyers/matches ready to go
+  const readyResources = [
+    // Finance-ready buyers
+    ...buyers
+      .filter(b => {
+        const f = financeProfiles.find(fp => fp.buyer_id === b.id);
+        return f && (f.status === 'ready_to_progress' || f.status === 'strong_buyer');
+      })
+      .slice(0, 2)
+      .map(b => ({ type: 'buyer' as const, item: b })),
+  ];
+
+  // Summary metrics
+  const metrics = {
+    urgentActions: leads.filter(l => ['mandate_proposed', 'mandate_sent'].includes(l.status)).length +
+                   matches.filter(m => m.priority === 'urgent').length,
+    activeMatches: matches.filter(m => m.status !== 'archived').length,
+    readyBuyers: financeProfiles.filter(f => f.status === 'ready_to_progress' || f.status === 'strong_buyer').length,
+    pendingMandates: mandates.filter(m => m.status === 'sent').length,
+  };
 
   if (loading) {
     return (
@@ -178,9 +193,17 @@ export default function CommandCenterPage() {
     );
   }
 
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'EUR',
+      maximumFractionDigits: 0,
+    }).format(amount);
+  };
+
   return (
     <div className="max-w-7xl mx-auto space-y-10">
-      {/* HERO HEADER */}
+      {/* HEADER */}
       <section className="pb-6 border-b border-white/[0.06]">
         <div className="flex items-end justify-between">
           <div>
@@ -188,363 +211,287 @@ export default function CommandCenterPage() {
             <h1 className="text-3xl font-semibold tracking-tight">Command Center</h1>
           </div>
           
-          {/* Key Metrics - 5 Layer Summary */}
+          {/* Quick Metrics */}
           <div className="flex items-center gap-8">
-            <Metric value={urgentSellers} label="Urgent Sellers" />
-            <Metric value={qualifiedBuyers} label="Qualified Buyers" />
-            <Metric value={activeMatches} label="Active Matches" />
-            <Metric value={activeMandates} label="Mandates" />
+            <Metric value={metrics.urgentActions} label="Urgent" color="red" />
+            <Metric value={metrics.activeMatches} label="Active Matches" />
+            <Metric value={metrics.readyBuyers} label="Ready Buyers" color="emerald" />
+            <Metric value={metrics.pendingMandates} label="Pending Signatures" />
           </div>
         </div>
       </section>
 
-      {/* TODAY'S FOCUS - Primary Section */}
-      {(todaysActions.length > 0 || priorityMatches.length > 0) && (
+      {/* ============================================
+          PRIORITY 1: URGENT NOW
+          ============================================ */}
+      {urgentNow.length > 0 && (
         <section>
           <div className="flex items-center gap-3 mb-5">
-            <div className="w-8 h-8 rounded-lg bg-white/[0.06] flex items-center justify-center">
-              <Zap className="w-4 h-4 text-white" />
+            <div className="w-8 h-8 rounded-lg bg-red-500/10 flex items-center justify-center">
+              <Flame className="w-4 h-4 text-red-400" />
             </div>
-            <h2 className="text-lg font-medium">Today's Focus</h2>
+            <div>
+              <h2 className="text-lg font-medium">Urgent Now</h2>
+              <p className="text-sm text-white/40">Requires immediate action</p>
+            </div>
+            <Badge className="ml-2 bg-red-500/20 text-red-400 border-0">
+              {urgentNow.length} items
+            </Badge>
           </div>
           
           <div className="space-y-3">
-            {/* Seller Actions */}
-            {todaysActions.map((lead) => {
-              const intel = intelligence[lead.id];
-              return (
-                <div 
-                  key={lead.id}
-                  className="group flex items-center justify-between p-5 surface-elevated rounded-2xl hover:border-white/10 transition-all cursor-pointer"
-                  onClick={() => router.push(`/sellers/${lead.id}`)}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-white/[0.04] flex items-center justify-center text-lg">
-                      🏠
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-3">
-                        <p className="font-medium">{lead.owner_name}</p>
-                        <Badge variant="outline" className="text-xs border-white/10">
-                          Seller
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-white/50 mt-0.5">
-                        {intel?.next_best_move.replace(/_/g, ' ')}
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-6">
-                    {intel && (
-                      <div className="text-right">
-                        <div className="flex items-center gap-2">
-                          <div className="w-20 h-1.5 bg-white/[0.08] rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-emerald-400 rounded-full"
-                              style={{ width: `${intel.mandate_readiness_score}%` }}
-                            />
-                          </div>
-                          <span className="text-sm text-white/60">{intel.mandate_readiness_score}%</span>
-                        </div>
-                      </div>
-                    )}
-                    <Button size="sm" className="gap-2 bg-white text-black hover:bg-white/90 opacity-0 group-hover:opacity-100 transition-opacity">
-                      View
-                      <ChevronRight className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
-              );
+            {urgentNow.map((action, i) => {
+              if (action.type === 'seller') {
+                const lead = action.item as Lead;
+                const intel = action.intel;
+                return (
+                  <ActionCard
+                    key={lead.id}
+                    icon={Building2}
+                    iconColor="orange"
+                    title={lead.owner_name}
+                    subtitle={`${lead.property_type} · ${lead.city}`}
+                    action={intel?.next_best_move.replace(/_/g, ' ') || 'Review opportunity'}
+                    urgency="closing"
+                    readiness={intel?.mandate_readiness_score}
+                    onClick={() => router.push(`/sellers/${lead.id}`)}
+                  />
+                );
+              }
+              if (action.type === 'match') {
+                const match = action.item as MatchOpportunity;
+                return (
+                  <ActionCard
+                    key={match.id}
+                    icon={Puzzle}
+                    iconColor="violet"
+                    title={`Match Opportunity · ${match.match_score_value}% Fit`}
+                    subtitle={match.recommended_action}
+                    action="Contact buyer now"
+                    urgency="high"
+                    onClick={() => router.push('/match')}
+                  />
+                );
+              }
+              return null;
             })}
-            
-            {/* Match Actions */}
-            {priorityMatches.map((match) => (
-              <div 
-                key={match.id}
-                className="group flex items-center justify-between p-5 surface-elevated rounded-2xl hover:border-white/10 transition-all cursor-pointer"
-                onClick={() => router.push('/match')}
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-violet-500/10 flex items-center justify-center">
-                    <Puzzle className="w-5 h-5 text-violet-400" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-3">
-                      <p className="font-medium">Match Opportunity</p>
-                      <Badge className="text-xs bg-violet-500/20 text-violet-400 border-0">
-                        {match.match_score_value}% Match
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-white/50 mt-0.5">
-                      {match.recommended_action}
-                    </p>
-                  </div>
-                </div>
-                
-                <Button size="sm" className="gap-2 bg-white text-black hover:bg-white/90 opacity-0 group-hover:opacity-100 transition-opacity">
-                  Action
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
-              </div>
-            ))}
           </div>
         </section>
       )}
 
-      {/* MAIN GRID - 5 Layer Overview */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        
-        {/* LEFT COLUMN */}
-        <div className="space-y-8">
-          
-          {/* PRIORITY SELLERS */}
-          <section>
-            <div className="flex items-center justify-between mb-5">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-white/[0.06] flex items-center justify-center">
-                  <Target className="w-4 h-4 text-white" />
-                </div>
-                <h2 className="text-lg font-medium">Priority Sellers</h2>
-              </div>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="text-white/50 hover:text-white gap-1"
-                onClick={() => router.push('/sellers')}
-              >
-                View all
-                <ArrowRight className="w-4 h-4" />
-              </Button>
+      {/* ============================================
+          PRIORITY 2: IMPORTANT TODAY
+          ============================================ */}
+      {importantToday.length > 0 && (
+        <section>
+          <div className="flex items-center gap-3 mb-5">
+            <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
+              <Zap className="w-4 h-4 text-amber-400" />
             </div>
-            
-            <div className="space-y-3">
-              {prioritySellers.map((lead) => {
-                const intel = intelligence[lead.id];
-                return (
-                  <div 
-                    key={lead.id}
-                    className="p-4 surface-subtle rounded-xl hover:bg-white/[0.04] transition-colors cursor-pointer group"
-                    onClick={() => router.push(`/sellers/${lead.id}`)}
-                  >
-                    <div className="flex items-start justify-between">
+            <div>
+              <h2 className="text-lg font-medium">Important Today</h2>
+              <p className="text-sm text-white/40">Schedule time for these today</p>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {importantToday.map((action) => {
+              const lead = action.item as Lead;
+              const intel = action.intel;
+              return (
+                <div
+                  key={lead.id}
+                  className="p-4 surface-subtle rounded-xl hover:bg-white/[0.04] transition-colors cursor-pointer"
+                  onClick={() => router.push(`/sellers/${lead.id}`)}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-white/[0.06] flex items-center justify-center">
+                        <Building2 className="w-5 h-5 text-white/50" />
+                      </div>
                       <div>
                         <p className="font-medium">{lead.owner_name}</p>
-                        <p className="text-sm text-white/40 mt-0.5">{lead.property_type} · {lead.city}</p>
+                        <p className="text-sm text-white/40">{lead.city}</p>
                       </div>
-                      <ChevronRight className="w-4 h-4 text-white/20 group-hover:text-white/40 transition-colors" />
                     </div>
-                    
                     {intel && (
-                      <div className="flex items-center gap-4 mt-3">
-                        <div className="flex items-center gap-2 flex-1">
-                          <div className="flex-1 h-1 bg-white/[0.06] rounded-full overflow-hidden max-w-[100px]">
-                            <div 
-                              className="h-full bg-emerald-400 rounded-full"
-                              style={{ width: `${intel.mandate_readiness_score}%` }}
-                            />
-                          </div>
-                          <span className="text-xs text-white/40">{intel.mandate_readiness_score}% ready</span>
-                        </div>
-                        <span className="text-xs text-white/30">·</span>
-                        <span className="text-xs text-white/50">{intel.next_best_move.replace(/_/g, ' ')}</span>
+                      <div className="text-right">
+                        <span className="text-sm font-medium text-emerald-400">
+                          {intel.mandate_readiness_score}%
+                        </span>
+                        <p className="text-xs text-white/40">ready</p>
                       </div>
                     )}
                   </div>
-                );
-              })}
-              
-              {prioritySellers.length === 0 && (
-                <div className="p-8 text-center text-white/30 surface-subtle rounded-xl">
-                  <Target className="w-8 h-8 mx-auto mb-3 opacity-50" />
-                  <p className="text-sm">No priority sellers</p>
-                </div>
-              )}
-            </div>
-          </section>
-
-          {/* STRONG BUYERS */}
-          <section>
-            <div className="flex items-center justify-between mb-5">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-white/[0.06] flex items-center justify-center">
-                  <Users className="w-4 h-4 text-white" />
-                </div>
-                <h2 className="text-lg font-medium">Strong Buyers</h2>
-              </div>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="text-white/50 hover:text-white gap-1"
-                onClick={() => router.push('/buyers')}
-              >
-                View all
-                <ArrowRight className="w-4 h-4" />
-              </Button>
-            </div>
-            
-            <div className="space-y-3">
-              {buyers
-                .filter(b => b.seriousness === 'high' || b.seriousness === 'very_high')
-                .slice(0, 3)
-                .map((buyer) => (
-                  <div 
-                    key={buyer.id}
-                    className="p-4 surface-subtle rounded-xl hover:bg-white/[0.04] transition-colors cursor-pointer group"
-                    onClick={() => router.push('/buyers')}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-white/[0.06] flex items-center justify-center">
-                          <UserCircle className="w-4 h-4 text-white/50" />
-                        </div>
-                        <div>
-                          <p className="font-medium">{buyer.name}</p>
-                          <p className="text-sm text-white/40">
-                            {buyer.target_areas[0]} · Budget: €{(buyer.budget_max / 1000000).toFixed(1)}M
-                          </p>
-                        </div>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-white/20 group-hover:text-white/40 transition-colors" />
-                    </div>
+                  <div className="mt-3 pt-3 border-t border-white/[0.04]">
+                    <p className="text-sm text-white/60">
+                      {intel?.next_best_move.replace(/_/g, ' ')}
+                    </p>
                   </div>
-                ))}
-            </div>
-          </section>
-        </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
-        {/* RIGHT COLUMN */}
-        <div className="space-y-8">
+      {/* ============================================
+          TWO COLUMN: BLOCKERS + OPPORTUNITIES
+          ============================================ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        
+        {/* BLOCKERS */}
+        <section>
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-red-500/10 flex items-center justify-center">
+                <AlertTriangle className="w-4 h-4 text-red-400" />
+              </div>
+              <h2 className="text-lg font-medium">Blockers</h2>
+            </div>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="text-white/50 hover:text-white gap-1"
+              onClick={() => router.push('/finance')}
+            >
+              View all
+              <ArrowRight className="w-4 h-4" />
+            </Button>
+          </div>
           
-          {/* STRATEGIC SIGNALS */}
-          <section>
-            <div className="flex items-center gap-3 mb-5">
-              <div className="w-8 h-8 rounded-lg bg-white/[0.06] flex items-center justify-center">
-                <Sparkles className="w-4 h-4 text-white" />
-              </div>
-              <h2 className="text-lg font-medium">Strategic Signals</h2>
-            </div>
-            
-            <div className="space-y-3">
-              {/* Signal 1: Match Opportunities */}
-              {highPriorityMatches > 0 && (
-                <div className="p-4 surface-elevated rounded-xl border-l-2 border-l-violet-400/50">
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-violet-500/[0.08] flex items-center justify-center shrink-0">
-                      <Puzzle className="w-4 h-4 text-violet-400" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-white/90">High-value matches waiting</p>
-                      <p className="text-sm text-white/50 mt-1">
-                        {highPriorityMatches} urgent match opportunities require action
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Signal 2: Finance Blockers */}
-              {financeBlockers > 0 && (
-                <div className="p-4 surface-elevated rounded-xl border-l-2 border-l-amber-400/50">
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-amber-500/[0.08] flex items-center justify-center shrink-0">
-                      <Wallet className="w-4 h-4 text-amber-400" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-white/90">Finance documentation needed</p>
-                      <p className="text-sm text-white/50 mt-1">
-                        {financeBlockers} buyers have incomplete financial profiles
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Signal 3: Mandate Opportunities */}
-              {pendingSignatures > 0 && (
-                <div className="p-4 surface-elevated rounded-xl border-l-2 border-l-emerald-400/50">
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-emerald-500/[0.08] flex items-center justify-center shrink-0">
-                      <FileSignature className="w-4 h-4 text-emerald-400" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-white/90">Mandates pending signature</p>
-                      <p className="text-sm text-white/50 mt-1">
-                        {pendingSignatures} mandates awaiting buyer signature
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Signal 4: Ready Buyers */}
-              {readyBuyers > 0 && (
-                <div className="p-4 surface-elevated rounded-xl border-l-2 border-l-blue-400/50">
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-blue-500/[0.08] flex items-center justify-center shrink-0">
-                      <CheckCircle className="w-4 h-4 text-blue-400" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-white/90">Finance-ready buyers</p>
-                      <p className="text-sm text-white/50 mt-1">
-                        {readyBuyers} buyers cleared to proceed with offers
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </section>
-
-          {/* FINANCE BLOCKERS */}
-          {blockedFinance.length > 0 && (
-            <section>
-              <div className="flex items-center justify-between mb-5">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
-                    <AlertCircle className="w-4 h-4 text-amber-400" />
-                  </div>
-                  <h2 className="text-lg font-medium">Finance Blockers</h2>
-                </div>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  className="text-white/50 hover:text-white gap-1"
+          <div className="space-y-3">
+            {blockers.length > 0 ? blockers.map((blocker) => {
+              const profile = blocker.item as FinanceProfile;
+              const buyer = buyers.find(b => b.id === profile.buyer_id);
+              if (!buyer) return null;
+              
+              return (
+                <div
+                  key={profile.id}
+                  className="p-4 surface-elevated rounded-xl border-l-2 border-l-red-400/50"
                   onClick={() => router.push('/finance')}
                 >
-                  View all
-                  <ArrowRight className="w-4 h-4" />
-                </Button>
-              </div>
-              
-              <div className="space-y-3">
-                {blockedFinance.map((profile) => {
-                  const buyer = buyers.find(b => b.id === profile.buyer_id);
-                  if (!buyer) return null;
-                  
-                  return (
-                    <div 
-                      key={profile.id}
-                      className="p-4 surface-subtle rounded-xl hover:bg-white/[0.04] transition-colors cursor-pointer group"
-                      onClick={() => router.push('/finance')}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <p className="font-medium">{buyer.name}</p>
-                          <p className="text-sm text-amber-400/70 mt-0.5">
-                            {profile.missing_documents.length} documents missing
-                          </p>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-white/20 group-hover:text-white/40 transition-colors" />
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center">
+                        <Wallet className="w-5 h-5 text-red-400" />
+                      </div>
+                      <div>
+                        <p className="font-medium">{buyer.name}</p>
+                        <p className="text-sm text-red-400/70">
+                          {profile.missing_documents.length} documents missing
+                        </p>
                       </div>
                     </div>
-                  );
-                })}
+                  </div>
+                </div>
+              );
+            }) : (
+              <div className="p-8 text-center surface-subtle rounded-xl">
+                <CheckCircle2 className="w-8 h-8 mx-auto mb-3 text-emerald-400/50" />
+                <p className="text-sm text-white/40">No blockers - pipeline flowing</p>
               </div>
-            </section>
-          )}
-        </div>
+            )}
+          </div>
+        </section>
+
+        {/* STRATEGIC OPPORTUNITIES */}
+        <section>
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center">
+                <Sparkles className="w-4 h-4 text-violet-400" />
+              </div>
+              <h2 className="text-lg font-medium">Strategic Opportunities</h2>
+            </div>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="text-white/50 hover:text-white gap-1"
+              onClick={() => router.push('/match')}
+            >
+              View all
+              <ArrowRight className="w-4 h-4" />
+            </Button>
+          </div>
+          
+          <div className="space-y-3">
+            {strategicOpportunities.length > 0 ? strategicOpportunities.map((opp) => {
+              const match = opp.item as MatchOpportunity;
+              return (
+                <div
+                  key={match.id}
+                  className="p-4 surface-elevated rounded-xl border-l-2 border-l-violet-400/50 cursor-pointer"
+                  onClick={() => router.push('/match')}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center">
+                        <Puzzle className="w-5 h-5 text-violet-400" />
+                      </div>
+                      <div>
+                        <p className="font-medium">Excellent Match</p>
+                        <p className="text-sm text-white/50">
+                          {match.match_score_value}% fit score
+                        </p>
+                      </div>
+                    </div>
+                    <Badge className="bg-violet-500/20 text-violet-400 border-0">
+                      {match.match_score_value}%
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-white/40 mt-3">
+                    {match.recommended_action}
+                  </p>
+                </div>
+              );
+            }) : (
+              <div className="p-8 text-center surface-subtle rounded-xl">
+                <Target className="w-8 h-8 mx-auto mb-3 text-white/20" />
+                <p className="text-sm text-white/40">Check Match page for opportunities</p>
+              </div>
+            )}
+          </div>
+        </section>
       </div>
+
+      {/* ============================================
+          READY RESOURCES
+          ============================================ */}
+      {readyResources.length > 0 && (
+        <section>
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              </div>
+              <h2 className="text-lg font-medium">Ready Resources</h2>
+            </div>
+          </div>
+          
+          <div className="flex flex-wrap gap-3">
+            {readyResources.map((resource) => {
+              const buyer = resource.item as Buyer;
+              return (
+                <div
+                  key={buyer.id}
+                  className="flex items-center gap-3 px-4 py-3 rounded-xl bg-emerald-500/5 border border-emerald-500/10 cursor-pointer"
+                  onClick={() => router.push('/buyers')}
+                >
+                  <UserCircle className="w-5 h-5 text-emerald-400" />
+                  <div>
+                    <p className="font-medium text-sm">{buyer.name}</p>
+                    <p className="text-xs text-white/40">
+                      {formatCurrency(buyer.budget_max)} · Ready to proceed
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* RECENT ACTIVITY */}
       <section className="pt-6 border-t border-white/[0.06]">
@@ -593,11 +540,87 @@ export default function CommandCenterPage() {
 
 // Helper Components
 
-function Metric({ value, label }: { value: number; label: string }) {
+function Metric({ value, label, color }: { value: number; label: string; color?: 'red' | 'emerald' }) {
   return (
     <div className="text-right">
-      <p className="text-2xl font-semibold">{value}</p>
+      <p className={`text-2xl font-semibold ${color === 'red' ? 'text-red-400' : color === 'emerald' ? 'text-emerald-400' : ''}`}>
+        {value}
+      </p>
       <p className="text-xs text-white/40 uppercase tracking-wider">{label}</p>
+    </div>
+  );
+}
+
+function ActionCard({
+  icon: Icon,
+  iconColor,
+  title,
+  subtitle,
+  action,
+  urgency,
+  readiness,
+  onClick,
+}: {
+  icon: React.ElementType;
+  iconColor: 'orange' | 'violet' | 'red';
+  title: string;
+  subtitle: string;
+  action: string;
+  urgency: 'closing' | 'high' | 'normal';
+  readiness?: number;
+  onClick: () => void;
+}) {
+  const colors = {
+    orange: "bg-orange-500/10 text-orange-400",
+    violet: "bg-violet-500/10 text-violet-400",
+    red: "bg-red-500/10 text-red-400",
+  };
+  
+  const urgencyLabels = {
+    closing: { label: "Closing", className: "bg-red-500/20 text-red-400" },
+    high: { label: "High", className: "bg-orange-500/20 text-orange-400" },
+    normal: { label: "Normal", className: "bg-blue-500/20 text-blue-400" },
+  };
+  
+  return (
+    <div 
+      className="group flex items-center justify-between p-5 surface-elevated rounded-2xl hover:border-white/10 transition-all cursor-pointer"
+      onClick={onClick}
+    >
+      <div className="flex items-center gap-4">
+        <div className={`w-12 h-12 rounded-xl ${colors[iconColor]} flex items-center justify-center`}>
+          <Icon className="w-5 h-5" />
+        </div>
+        <div>
+          <div className="flex items-center gap-3">
+            <p className="font-medium">{title}</p>
+            <Badge className={`text-xs ${urgencyLabels[urgency].className} border-0`}>
+              {urgencyLabels[urgency].label}
+            </Badge>
+          </div>
+          <p className="text-sm text-white/50 mt-0.5">{subtitle}</p>
+        </div>
+      </div>
+      
+      <div className="flex items-center gap-6">
+        {readiness && (
+          <div className="text-right">
+            <div className="flex items-center gap-2">
+              <div className="w-20 h-1.5 bg-white/[0.08] rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-emerald-400 rounded-full"
+                  style={{ width: `${readiness}%` }}
+                />
+              </div>
+              <span className="text-sm text-white/60">{readiness}%</span>
+            </div>
+          </div>
+        )}
+        <Button size="sm" className="gap-2 bg-white text-black hover:bg-white/90 opacity-0 group-hover:opacity-100 transition-opacity">
+          {action}
+          <ChevronRight className="w-4 h-4" />
+        </Button>
+      </div>
     </div>
   );
 }
