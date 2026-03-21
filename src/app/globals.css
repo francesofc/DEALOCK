@@ -3,18 +3,18 @@
 @tailwind utilities;
 
 :root {
-  --background: #0a0a0a;
+  --background: #0d0d0f;
   --foreground: #fafafa;
-  --primary: #fafafa;
-  --primary-foreground: #171717;
-  --secondary: #262626;
+  --primary: #ffffff;
+  --primary-foreground: #0d0d0f;
+  --secondary: rgba(255, 255, 255, 0.06);
   --secondary-foreground: #fafafa;
-  --muted: #262626;
-  --muted-foreground: #a3a3a3;
-  --accent: #262626;
+  --muted: rgba(255, 255, 255, 0.04);
+  --muted-foreground: rgba(255, 255, 255, 0.5);
+  --accent: rgba(255, 255, 255, 0.08);
   --accent-foreground: #fafafa;
-  --border: #404040;
-  --card: #171717;
+  --border: rgba(255, 255, 255, 0.08);
+  --card: rgba(255, 255, 255, 0.02);
   --card-foreground: #fafafa;
 }
 
@@ -24,11 +24,27 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+  
+  .surface-elevated {
+    background: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%);
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+  
+  .surface-subtle {
+    background: rgba(255,255,255,0.02);
+  }
+  
+  .text-gradient {
+    background: linear-gradient(180deg, #ffffff 0%, rgba(255,255,255,0.7) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
   }
 }

@@ -1,25 +1,32 @@
-import { FileSignature, Phone, Mail, User, LucideIcon } from "lucide-react";
+import { FileSignature, Phone, Mail, User, MessageSquare, Calendar, StickyNote, LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ActivityType } from "@/types/database";
 
 interface ActivityItemProps {
-  type: "mandate" | "call" | "email" | "lead";
+  type: ActivityType;
   title: string;
   description: string;
   time: string;
 }
 
-const typeIcons: Record<string, LucideIcon> = {
+const typeIcons: Record<ActivityType, LucideIcon> = {
   mandate: FileSignature,
   call: Phone,
   email: Mail,
   lead: User,
+  whatsapp: MessageSquare,
+  meeting: Calendar,
+  note: StickyNote,
 };
 
-const typeColors: Record<string, string> = {
+const typeColors: Record<ActivityType, string> = {
   mandate: "bg-green-500/20 text-green-400",
   call: "bg-blue-500/20 text-blue-400",
   email: "bg-purple-500/20 text-purple-400",
   lead: "bg-orange-500/20 text-orange-400",
+  whatsapp: "bg-green-600/20 text-green-500",
+  meeting: "bg-yellow-500/20 text-yellow-400",
+  note: "bg-gray-500/20 text-gray-400",
 };
 
 export function ActivityItem({ type, title, description, time }: ActivityItemProps) {
