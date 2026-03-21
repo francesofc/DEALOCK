@@ -1,3 +1,12 @@
+// ============================================
+// DEALOCK TYPE SYSTEM
+// Five core layers: Sellers, Buyers, Match, Mandates, Finance
+// ============================================
+
+// ----------------------------------------
+// SELLER LAYER (formerly Leads)
+// ----------------------------------------
+
 export type LeadStatus = 
   | 'new' 
   | 'qualified' 
@@ -13,13 +22,7 @@ export type WhatsappStatus = 'not_sent' | 'sent' | 'delivered' | 'read' | 'repli
 
 export type SellerType = 'owner' | 'investor' | 'developer' | 'unknown'
 
-export type LanguagePreference = 'fr' | 'pt' | 'en'
-
-export type ActivityType = 'call' | 'email' | 'whatsapp' | 'meeting' | 'note' | 'mandate' | 'lead'
-
-export type MandateStatus = 'draft' | 'sent' | 'signed' | 'expired' | 'terminated'
-
-export type SigningMode = 'physical' | 'electronic' | 'remote'
+export type LanguagePreference = 'fr' | 'pt' | 'en' | 'es'
 
 export interface Lead {
   id: string
@@ -48,14 +51,206 @@ export interface Lead {
   notes: string | null
 }
 
+// Alias for semantic clarity
+export type Seller = Lead
+
+// ----------------------------------------
+// BUYER LAYER
+// ----------------------------------------
+
+export type BuyerStatus = 
+  | 'new'
+  | 'contacted'
+  | 'qualified'
+  | 'viewing_scheduled'
+  | 'offer_pending'
+  | 'closed'
+  | 'inactive'
+
+export type BuyerType = 'first_time' | 'investor' | 'relocating' | 'upgrading' | 'downsizing'
+
+export type ReadinessLevel = 'browsing' | '3_months' | '1_month' | 'immediate'
+
+export type SeriousnessLevel = 'low' | 'medium' | 'high' | 'very_high'
+
+export interface Buyer {
+  id: string
+  created_at: string
+  updated_at: string
+  name: string
+  email: string
+  phone: string
+  status: BuyerStatus
+  buyer_type: BuyerType
+  
+  // Search Criteria
+  target_areas: string[]
+  property_types: string[]
+  budget_min: number
+  budget_max: number
+  min_bedrooms: number | null
+  min_area_m2: number | null
+  
+  // Qualification
+  timeline: ReadinessLevel
+  seriousness: SeriousnessLevel
+  pre_approved: boolean
+  cash_buyer: boolean
+  
+  // Next Actions
+  next_action: string
+  next_action_date: string | null
+  
+  // Notes
+  notes: string | null
+  language_preference: LanguagePreference
+}
+
+// ----------------------------------------
+// MATCH LAYER
+// ----------------------------------------
+
+export type MatchStatus = 
+  | 'identified'
+  | 'contacted_buyer'
+  | 'viewing_scheduled'
+  | 'offer_received'
+  | 'negotiating'
+  | 'closed'
+  | 'archived'
+
+export type MatchScore = 'weak' | 'fair' | 'good' | 'excellent'
+
+export interface MatchOpportunity {
+  id: string
+  created_at: string
+  updated_at: string
+  
+  // Connections
+  buyer_id: string
+  seller_id: string
+  mandate_id: string | null
+  
+  // Match Details
+  match_score: MatchScore
+  match_score_value: number // 0-100
+  match_reasons: string[]
+  
+  // Status
+  status: MatchStatus
+  
+  // Recommended Action
+  recommended_action: string
+  priority: 'low' | 'medium' | 'high' | 'urgent'
+  
+  // Notes
+  notes: string | null
+}
+
+// ----------------------------------------
+// FINANCE LAYER
+// ----------------------------------------
+
+export type FinanceStatus = 
+  | 'incomplete'
+  | 'under_review'
+  | 'needs_clarification'
+  | 'ready_to_progress'
+  | 'strong_buyer'
+
+export type DocumentType = 
+  | 'id_document'
+  | 'proof_income'
+  | 'bank_statements'
+  | 'tax_returns'
+  | 'employment_contract'
+  | 'existing_property_docs'
+  | 'loan_pre_approval'
+
+export interface DocumentCheck {
+  type: DocumentType
+  present: boolean
+  verified: boolean
+  uploaded_at: string | null
+}
+
+export interface FinanceProfile {
+  id: string
+  created_at: string
+  updated_at: string
+  buyer_id: string
+  
+  // Status
+  status: FinanceStatus
+  
+  // Documents
+  documents: DocumentCheck[]
+  documents_complete: boolean
+  completion_percentage: number // 0-100
+  
+  // Financials (indicative)
+  annual_income: number | null
+  available_down_payment: number | null
+  existing_debt_monthly: number | null
+  
+  // Calculated
+  estimated_max_budget: number | null
+  estimated_monthly_payment: number | null
+  affordability_status: 'insufficient' | 'tight' | 'comfortable' | 'strong' | null
+  
+  // Review
+  under_review_since: string | null
+  reviewed_by: string | null
+  review_notes: string | null
+  
+  // Next Steps
+  missing_documents: DocumentType[]
+  recommended_actions: string[]
+}
+
+// ----------------------------------------
+// ACTIVITY LAYER
+// ----------------------------------------
+
+export type ActivityType = 'call' | 'email' | 'whatsapp' | 'meeting' | 'note' | 'mandate' | 'lead' | 'buyer' | 'match' | 'finance'
+
 export interface Activity {
   id: string
-  lead_id: string
   created_at: string
   type: ActivityType
   content: string
   operator_name: string
+  
+  // Can relate to any entity
+  lead_id: string | null
+  buyer_id: string | null
+  match_id: string | null
+  mandate_id: string | null
 }
+
+// ----------------------------------------
+// MANDATE LAYER
+// ----------------------------------------
+
+export type MandateStatus = 'draft' | 'sent' | 'signed' | 'expired' | 'terminated'
+
+export type SigningMode = 'physical' | 'electronic' | 'remote'
+
+export interface Mandate {
+  id: string
+  lead_id: string
+  created_at: string
+  agency_name: string
+  exclusive: boolean
+  signing_mode: SigningMode
+  status: MandateStatus
+  signed_at: string | null
+  notes: string | null
+}
+
+// ----------------------------------------
+// LEGACY AI OUTPUTS (kept for compatibility)
+// ----------------------------------------
 
 export interface AIOutput {
   id: string
@@ -85,19 +280,10 @@ export interface AIOutput {
   next_best_action: string
 }
 
-export interface Mandate {
-  id: string
-  lead_id: string
-  created_at: string
-  agency_name: string
-  exclusive: boolean
-  signing_mode: SigningMode
-  status: MandateStatus
-  signed_at: string | null
-  notes: string | null
-}
+// ----------------------------------------
+// DATABASE TYPE FOR SUPABASE
+// ----------------------------------------
 
-// Database type for Supabase client
 export interface Database {
   public: {
     Tables: {
@@ -105,6 +291,21 @@ export interface Database {
         Row: Lead
         Insert: Omit<Lead, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string; updated_at?: string }
         Update: Partial<Omit<Lead, 'id' | 'created_at'>>
+      }
+      buyers: {
+        Row: Buyer
+        Insert: Omit<Buyer, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string; updated_at?: string }
+        Update: Partial<Omit<Buyer, 'id' | 'created_at'>>
+      }
+      match_opportunities: {
+        Row: MatchOpportunity
+        Insert: Omit<MatchOpportunity, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string; updated_at?: string }
+        Update: Partial<Omit<MatchOpportunity, 'id' | 'created_at'>>
+      }
+      finance_profiles: {
+        Row: FinanceProfile
+        Insert: Omit<FinanceProfile, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string; updated_at?: string }
+        Update: Partial<Omit<FinanceProfile, 'id' | 'created_at'>>
       }
       activities: {
         Row: Activity

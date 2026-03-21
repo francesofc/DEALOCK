@@ -182,7 +182,7 @@ export default function PipelinePage() {
                       <div 
                         key={lead.id}
                         className="p-4 surface-subtle rounded-xl hover:bg-white/[0.04] transition-colors cursor-pointer group"
-                        onClick={() => router.push(`/leads/${lead.id}`)}
+                        onClick={() => router.push(`/sellers/${lead.id}`)}
                       >
                         <div className="flex items-start justify-between mb-2">
                           <p className="font-medium text-sm">{lead.owner_name}</p>

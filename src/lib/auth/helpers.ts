@@ -75,6 +75,6 @@ export function isAuthenticated(): boolean {
  * Check if route is protected
  */
 export function isProtectedRoute(pathname: string): boolean {
-  const protectedPaths = ['/', '/leads', '/pipeline', '/activities', '/mandates', '/settings']
+  const protectedPaths = ['/', '/sellers', '/pipeline', '/activities', '/mandates', '/settings']
   return protectedPaths.some(path => pathname === path || pathname.startsWith(`${path}/`))
 }

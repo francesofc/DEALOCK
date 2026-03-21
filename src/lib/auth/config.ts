@@ -5,8 +5,8 @@ export const AUTH_CONFIG = {
   // Protected routes that require authentication
   protectedRoutes: [
     '/',
-    '/leads',
-    '/leads/[id]',
+    '/sellers',
+    '/sellers/[id]',
     '/pipeline',
     '/activities',
     '/mandates',

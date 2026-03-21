@@ -8,6 +8,9 @@ const mockActivities: Activity[] = [
   {
     id: 'a1',
     lead_id: '11111111-1111-1111-1111-111111111111',
+    buyer_id: null,
+    match_id: null,
+    mandate_id: null,
     created_at: '2024-03-10T08:00:00Z',
     type: 'lead',
     content: 'Lead created from referral by Jean Martin',
@@ -16,6 +19,9 @@ const mockActivities: Activity[] = [
   {
     id: 'a2',
     lead_id: '11111111-1111-1111-1111-111111111111',
+    buyer_id: null,
+    match_id: null,
+    mandate_id: null,
     created_at: '2024-03-12T14:00:00Z',
     type: 'email',
     content: 'Sent market analysis and comparable sales',
@@ -24,6 +30,9 @@ const mockActivities: Activity[] = [
   {
     id: 'a3',
     lead_id: '11111111-1111-1111-1111-111111111111',
+    buyer_id: null,
+    match_id: null,
+    mandate_id: null,
     created_at: '2024-03-14T10:00:00Z',
     type: 'call',
     content: 'Discovery call - discussed timeline and motivation',
@@ -32,6 +41,9 @@ const mockActivities: Activity[] = [
   {
     id: 'a4',
     lead_id: '11111111-1111-1111-1111-111111111111',
+    buyer_id: null,
+    match_id: null,
+    mandate_id: null,
     created_at: '2024-03-15T11:00:00Z',
     type: 'meeting',
     content: 'Property visit and condition assessment',
@@ -40,6 +52,9 @@ const mockActivities: Activity[] = [
   {
     id: 'a5',
     lead_id: '11111111-1111-1111-1111-111111111111',
+    buyer_id: null,
+    match_id: null,
+    mandate_id: 'mandate-1',
     created_at: '2024-03-15T14:30:00Z',
     type: 'mandate',
     content: 'Exclusive mandate signed for 6 months',
@@ -49,6 +64,9 @@ const mockActivities: Activity[] = [
   {
     id: 'a6',
     lead_id: '22222222-2222-2222-2222-222222222222',
+    buyer_id: null,
+    match_id: null,
+    mandate_id: null,
     created_at: '2024-03-12T10:00:00Z',
     type: 'lead',
     content: 'Lead created from website inquiry',
@@ -57,6 +75,9 @@ const mockActivities: Activity[] = [
   {
     id: 'a7',
     lead_id: '22222222-2222-2222-2222-222222222222',
+    buyer_id: null,
+    match_id: null,
+    mandate_id: null,
     created_at: '2024-03-13T09:00:00Z',
     type: 'whatsapp',
     content: 'Initial WhatsApp message sent with market analysis',
@@ -65,136 +86,81 @@ const mockActivities: Activity[] = [
   {
     id: 'a8',
     lead_id: '22222222-2222-2222-2222-222222222222',
+    buyer_id: null,
+    match_id: null,
+    mandate_id: null,
     created_at: '2024-03-15T16:00:00Z',
     type: 'call',
     content: 'Follow-up call - discussed pricing expectations',
     operator_name: 'John Doe',
   },
+  // Buyer activities
   {
-    id: 'a9',
-    lead_id: '22222222-2222-2222-2222-222222222222',
-    created_at: '2024-03-19T14:00:00Z',
-    type: 'email',
-    content: 'Sent exclusivity proposal with marketing plan',
-    operator_name: 'John Doe',
-  },
-  // Emma Johnson activities
-  {
-    id: 'a10',
-    lead_id: '33333333-3333-3333-3333-333333333333',
-    created_at: '2024-03-14T09:00:00Z',
-    type: 'lead',
-    content: 'Lead created from Instagram ad',
+    id: 'a30',
+    lead_id: null,
+    buyer_id: 'buyer-1',
+    match_id: null,
+    mandate_id: null,
+    created_at: '2026-01-15T10:30:00Z',
+    type: 'buyer',
+    content: 'Buyer registered - Marc Dubois, investor profile',
     operator_name: 'System',
   },
   {
-    id: 'a11',
-    lead_id: '33333333-3333-3333-3333-333333333333',
-    created_at: '2024-03-15T10:00:00Z',
-    type: 'email',
-    content: 'Sent introduction and credentials',
-    operator_name: 'John Doe',
-  },
-  {
-    id: 'a12',
-    lead_id: '33333333-3333-3333-3333-333333333333',
-    created_at: '2024-03-20T11:00:00Z',
-    type: 'call',
-    content: 'Scheduled for tomorrow - pricing discussion',
-    operator_name: 'John Doe',
-  },
-  // Carlos Mendes activities
-  {
-    id: 'a13',
-    lead_id: '44444444-4444-4444-4444-444444444444',
-    created_at: '2024-03-08T14:00:00Z',
-    type: 'lead',
-    content: 'Lead from email campaign #3',
+    id: 'a31',
+    lead_id: null,
+    buyer_id: 'buyer-2',
+    match_id: null,
+    mandate_id: null,
+    created_at: '2026-02-03T09:15:00Z',
+    type: 'buyer',
+    content: 'Relocation inquiry - Sarah Chen from Singapore',
     operator_name: 'System',
   },
   {
-    id: 'a14',
-    lead_id: '44444444-4444-4444-4444-444444444444',
-    created_at: '2024-03-10T09:00:00Z',
-    type: 'email',
-    content: 'Initial outreach sent',
-    operator_name: 'John Doe',
-  },
-  {
-    id: 'a15',
-    lead_id: '44444444-4444-4444-4444-444444444444',
-    created_at: '2024-03-18T10:00:00Z',
-    type: 'note',
-    content: 'Auto-reply: out of office until next week',
-    operator_name: 'System',
-  },
-  // Sophie Martin activities
-  {
-    id: 'a16',
-    lead_id: '55555555-5555-5555-5555-555555555555',
-    created_at: '2024-03-16T11:00:00Z',
-    type: 'lead',
-    content: 'Referral from Marie Dupont',
+    id: 'a32',
+    lead_id: null,
+    buyer_id: 'buyer-1',
+    match_id: 'match-1',
+    mandate_id: null,
+    created_at: '2026-03-18T10:00:00Z',
+    type: 'match',
+    content: 'Match identified: Marc Dubois ↔ Le Marais Loft (92% score)',
     operator_name: 'System',
   },
   {
-    id: 'a17',
-    lead_id: '55555555-5555-5555-5555-555555555555',
-    created_at: '2024-03-17T14:00:00Z',
-    type: 'call',
-    content: 'Initial consultation - explained situation',
-    operator_name: 'John Doe',
+    id: 'a33',
+    lead_id: null,
+    buyer_id: 'buyer-2',
+    match_id: 'match-2',
+    mandate_id: null,
+    created_at: '2026-03-17T09:15:00Z',
+    type: 'match',
+    content: 'Match identified: Sarah Chen ↔ Neuilly property (78% score)',
+    operator_name: 'System',
   },
+  // Finance activities
   {
-    id: 'a18',
-    lead_id: '55555555-5555-5555-5555-555555555555',
-    created_at: '2024-03-17T15:00:00Z',
-    type: 'note',
-    content: 'Requires discretion due to divorce proceedings',
-    operator_name: 'John Doe',
-  },
-  // Lucas Pereira activities
-  {
-    id: 'a19',
-    lead_id: '66666666-6666-6666-6666-666666666666',
-    created_at: '2024-03-15T13:00:00Z',
-    type: 'lead',
-    content: 'Website inquiry - first-time seller',
+    id: 'a40',
+    lead_id: null,
+    buyer_id: 'buyer-1',
+    match_id: null,
+    mandate_id: null,
+    created_at: '2026-01-20T10:00:00Z',
+    type: 'finance',
+    content: 'Finance profile created - pre-approved for 1M',
     operator_name: 'System',
   },
   {
-    id: 'a20',
-    lead_id: '66666666-6666-6666-6666-666666666666',
-    created_at: '2024-03-16T10:00:00Z',
-    type: 'whatsapp',
-    content: 'Sent welcome message and process overview',
-    operator_name: 'John Doe',
-  },
-  // Ana Costa activities
-  {
-    id: 'a21',
-    lead_id: '77777777-7777-7777-7777-777777777777',
-    created_at: '2024-03-20T08:00:00Z',
-    type: 'lead',
-    content: 'Walk-in prospect at office',
+    id: 'a41',
+    lead_id: null,
+    buyer_id: 'buyer-4',
+    match_id: null,
+    mandate_id: null,
+    created_at: '2026-01-30T14:00:00Z',
+    type: 'finance',
+    content: 'Cash buyer verified - funds confirmed',
     operator_name: 'System',
-  },
-  // Pedro Santos activities
-  {
-    id: 'a22',
-    lead_id: '88888888-8888-8888-8888-888888888888',
-    created_at: '2024-03-01T09:00:00Z',
-    type: 'lead',
-    content: 'Portal lead - already talking to other agents',
-    operator_name: 'System',
-  },
-  {
-    id: 'a23',
-    lead_id: '88888888-8888-8888-8888-888888888888',
-    created_at: '2024-03-15T10:00:00Z',
-    type: 'note',
-    content: 'Lead lost - chose competitor',
-    operator_name: 'John Doe',
   },
 ]
 
@@ -207,6 +173,13 @@ export async function getActivities(): Promise<Activity[]> {
 export async function getActivitiesByLeadId(leadId: string): Promise<Activity[]> {
   const activities = mockActivities
     .filter(a => a.lead_id === leadId)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  return Promise.resolve([...activities])
+}
+
+export async function getActivitiesByBuyerId(buyerId: string): Promise<Activity[]> {
+  const activities = mockActivities
+    .filter(a => a.buyer_id === buyerId)
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
   return Promise.resolve([...activities])
 }

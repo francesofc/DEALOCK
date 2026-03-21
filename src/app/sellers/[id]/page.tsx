@@ -64,13 +64,16 @@ const activityTypeMap: Record<ActivityType, { label: string; icon: string }> = {
   note: { label: "Note", icon: "file-text" },
   mandate: { label: "Mandate", icon: "file-signature" },
   lead: { label: "Lead", icon: "user" },
+  buyer: { label: "Buyer", icon: "users" },
+  match: { label: "Match", icon: "puzzle" },
+  finance: { label: "Finance", icon: "wallet" },
 };
 
 const formatMindset = (mindset: string) => {
   return mindset.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 };
 
-export default function LeadDetailPage() {
+export default function SellerDetailPage() {
   const params = useParams();
   const router = useRouter();
   const leadId = params.id as string;
@@ -123,11 +126,11 @@ export default function LeadDetailPage() {
   if (!lead) {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh]">
-        <p className="text-white/50">Lead not found</p>
-        <Link href="/leads" className="mt-4">
+        <p className="text-white/50">Seller not found</p>
+        <Link href="/sellers" className="mt-4">
           <Button variant="ghost" size="sm" className="gap-2">
             <ArrowLeft className="w-4 h-4" />
-            Back to Leads
+            Back to Sellers
           </Button>
         </Link>
       </div>
@@ -140,10 +143,10 @@ export default function LeadDetailPage() {
     <div className="max-w-7xl mx-auto">
       {/* Navigation Bar */}
       <div className="flex items-center justify-between mb-8">
-        <Link href="/leads">
+        <Link href="/sellers">
           <Button variant="ghost" size="sm" className="gap-2 text-white/60 hover:text-white hover:bg-white/[0.04]">
             <ArrowLeft className="w-4 h-4" />
-            Back to Leads
+            Back to Sellers
           </Button>
         </Link>
         <Button variant="outline" size="sm" className="gap-2 border-white/10 hover:bg-white/[0.04]">

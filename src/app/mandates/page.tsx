@@ -182,7 +182,7 @@ export default function MandatesPage() {
                 <div 
                   key={mandate.id}
                   className="p-5 surface-subtle rounded-2xl hover:bg-white/[0.04] transition-colors cursor-pointer group"
-                  onClick={() => router.push(`/leads/${mandate.lead_id}`)}
+                  onClick={() => router.push(`/sellers/${mandate.lead_id}`)}
                 >
                   <div className="flex items-center gap-6">
                     {/* Icon */}

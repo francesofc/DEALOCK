@@ -31,7 +31,7 @@ const statusMap: Record<LeadStatus, { label: string; className: string }> = {
   lost: { label: "Lost", className: "bg-red-500/15 text-red-400" },
 };
 
-export default function LeadsPage() {
+export default function SellersPage() {
   const router = useRouter();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [intelligence, setIntelligence] = useState<Record<string, SellerIntelligence>>({});
@@ -75,12 +75,12 @@ export default function LeadsPage() {
       {/* HEADER */}
       <div className="flex items-end justify-between mb-8 pb-6 border-b border-white/[0.06]">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Seller Leads</h1>
-          <p className="text-white/40 mt-1">{leads.length} leads in your pipeline</p>
+          <h1 className="text-2xl font-semibold tracking-tight">Sellers</h1>
+          <p className="text-white/40 mt-1">{leads.length} seller relationships in progress</p>
         </div>
         <Button className="gap-2 bg-white text-black hover:bg-white/90">
           <Plus className="w-4 h-4" />
-          Add Lead
+          Add Seller
         </Button>
       </div>
 
@@ -109,7 +109,7 @@ export default function LeadsPage() {
             <div 
               key={lead.id}
               className="group p-5 surface-subtle rounded-2xl hover:bg-white/[0.04] transition-all cursor-pointer"
-              onClick={() => router.push(`/leads/${lead.id}`)}
+              onClick={() => router.push(`/sellers/${lead.id}`)}
             >
               <div className="flex items-center gap-6">
                 {/* Avatar / Type */}
@@ -171,7 +171,7 @@ export default function LeadsPage() {
                     className="gap-1.5 text-white/50 hover:text-white hover:bg-white/[0.06] opacity-0 group-hover:opacity-100 transition-opacity"
                     onClick={(e) => {
                       e.stopPropagation();
-                      router.push(`/leads/${lead.id}`);
+                      router.push(`/sellers/${lead.id}`);
                     }}
                   >
                     <Sparkles className="w-3.5 h-3.5" />

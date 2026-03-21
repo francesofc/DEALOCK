@@ -4,10 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
+  UserCircle,
   Users,
-  GitBranch,
-  CheckSquare,
+  Puzzle,
   FileSignature,
+  Wallet,
+  CheckSquare,
   Settings,
   Target,
 } from "lucide-react";
@@ -15,10 +17,12 @@ import { cn } from "@/lib/utils";
 
 const navigation = [
   { name: "Command Center", href: "/", icon: LayoutDashboard },
-  { name: "Leads", href: "/leads", icon: Users },
-  { name: "Pipeline", href: "/pipeline", icon: GitBranch },
-  { name: "Activities", href: "/activities", icon: CheckSquare },
+  { name: "Sellers", href: "/sellers", icon: UserCircle },
+  { name: "Buyers", href: "/buyers", icon: Users },
+  { name: "Match", href: "/match", icon: Puzzle },
   { name: "Mandates", href: "/mandates", icon: FileSignature },
+  { name: "Finance", href: "/finance", icon: Wallet },
+  { name: "Activities", href: "/activities", icon: CheckSquare },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 
@@ -41,7 +45,7 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-4 py-8 space-y-0.5">
+      <nav className="flex-1 px-4 py-6 space-y-0.5">
         {navigation.map((item) => {
           const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
@@ -49,7 +53,7 @@ export function Sidebar() {
               key={item.name}
               href={item.href}
               className={cn(
-                "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all",
+                "flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all",
                 isActive
                   ? "bg-white text-black"
                   : "text-white/60 hover:text-white hover:bg-white/[0.04]"

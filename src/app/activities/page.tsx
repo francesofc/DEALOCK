@@ -14,7 +14,10 @@ import {
   MessageSquare,
   FileSignature,
   User,
-  Clock
+  Users,
+  Clock,
+  Puzzle,
+  Wallet
 } from "lucide-react";
 import { getActivities, getLeads } from "@/lib/data";
 import { Activity, Lead, ActivityType } from "@/types/database";
@@ -27,6 +30,9 @@ const activityIcons: Record<ActivityType, React.ElementType> = {
   note: Clock,
   mandate: FileSignature,
   lead: User,
+  buyer: Users,
+  match: Puzzle,
+  finance: Wallet,
 };
 
 const activityLabels: Record<ActivityType, string> = {
@@ -37,6 +43,9 @@ const activityLabels: Record<ActivityType, string> = {
   note: "Note",
   mandate: "Mandate",
   lead: "Lead",
+  buyer: "Buyer",
+  match: "Match",
+  finance: "Finance",
 };
 
 export default function ActivitiesPage() {
@@ -106,7 +115,7 @@ export default function ActivitiesPage() {
       {/* ACTIVITY TIMELINE */}
       <div className="space-y-1">
         {activities.map((activity) => {
-          const lead = leads[activity.lead_id];
+          const lead = activity.lead_id ? leads[activity.lead_id] : null;
           const Icon = activityIcons[activity.type];
           
           return (

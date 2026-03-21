@@ -1,4 +1,16 @@
-import { FileSignature, Phone, Mail, User, MessageSquare, Calendar, StickyNote, LucideIcon } from "lucide-react";
+import { 
+  FileSignature, 
+  Phone, 
+  Mail, 
+  User, 
+  Users,
+  MessageSquare, 
+  Calendar, 
+  StickyNote, 
+  Puzzle,
+  Wallet,
+  LucideIcon 
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ActivityType } from "@/types/database";
 
@@ -17,6 +29,9 @@ const typeIcons: Record<ActivityType, LucideIcon> = {
   whatsapp: MessageSquare,
   meeting: Calendar,
   note: StickyNote,
+  buyer: Users,
+  match: Puzzle,
+  finance: Wallet,
 };
 
 const typeColors: Record<ActivityType, string> = {
@@ -27,6 +42,9 @@ const typeColors: Record<ActivityType, string> = {
   whatsapp: "bg-green-600/20 text-green-500",
   meeting: "bg-yellow-500/20 text-yellow-400",
   note: "bg-gray-500/20 text-gray-400",
+  buyer: "bg-cyan-500/20 text-cyan-400",
+  match: "bg-violet-500/20 text-violet-400",
+  finance: "bg-amber-500/20 text-amber-400",
 };
 
 export function ActivityItem({ type, title, description, time }: ActivityItemProps) {
