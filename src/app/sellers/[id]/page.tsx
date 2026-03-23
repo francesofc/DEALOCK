@@ -31,15 +31,20 @@ import {
   ChevronRight,
   Shield,
   XCircle,
-  MessageCircle
+  MessageCircle,
+  Plus
 } from "lucide-react";
 import Link from "next/link";
-import { getLeadById, getActivitiesByLeadId, getMandateByLeadId } from "@/lib/data";
+import { getLeadById, getActivitiesByLeadId, getMandateByLeadId, updateLead, addActivity, createMandate, updateMandate, getMandates, getMatches } from "@/lib/data";
 import { getLeadIntelligence } from "@/lib/intelligence/mock-intelligence";
-import { Lead, Activity, Mandate, LeadStatus, MandateStatus, ActivityType } from "@/types/database";
+import { getSellerNextAction, urgencyColor, getStaleness, getDaysSinceLastActivity, NextAction } from "@/lib/intelligence/next-actions";
+import { calculateActivationState, getReadinessColor } from "@/lib/intelligence/mandate-activation";
+import { Lead, Activity, Mandate, LeadStatus, MandateStatus, ActivityType, MatchOpportunity } from "@/types/database";
 import { SellerIntelligence } from "@/types/seller-intelligence";
 import { EditDrawer } from "@/components/ui/EditDrawer";
 import { SellerEditPanel } from "@/components/sellers/SellerEditPanel";
+import { ActivityCreatePanel } from "@/components/activities/ActivityCreatePanel";
+import { MandateCreatePanel } from "@/components/mandates/MandateCreatePanel";
 import { useTranslation } from "@/lib/i18n";
 
 // ============================================
@@ -72,6 +77,7 @@ const activityTypeMap: Record<ActivityType, { label: string; icon: React.Element
   whatsapp: { label: "WhatsApp", icon: MessageSquare },
   meeting: { label: "Meeting", icon: Calendar },
   note: { label: "Note", icon: Edit3 },
+  follow_up: { label: "Follow Up", icon: Clock },
   mandate: { label: "Mandate", icon: FileSignature },
   lead: { label: "Lead", icon: User },
   buyer: { label: "Buyer", icon: User },
@@ -108,23 +114,44 @@ export default function SellerDetailPage() {
   const [lead, setLead] = useState<Lead | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [mandate, setMandate] = useState<Mandate | null>(null);
+  const [matches, setMatches] = useState<MatchOpportunity[]>([]);
   const [intelligence, setIntelligence] = useState<SellerIntelligence | null>(null);
   const [loading, setLoading] = useState(true);
   const [isEditDrawerOpen, setIsEditDrawerOpen] = useState(false);
   const [editedLead, setEditedLead] = useState<Lead | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  
+  // Activity creation state
+  const [isActivityDrawerOpen, setIsActivityDrawerOpen] = useState(false);
+  const [newActivityData, setNewActivityData] = useState<{ type: ActivityType; content: string; operator_name: string }>({
+    type: "note",
+    content: "",
+    operator_name: "Agent",
+  });
+  const [isAddingActivity, setIsAddingActivity] = useState(false);
+  
+  // Mandate creation state
+  const [isMandateDrawerOpen, setIsMandateDrawerOpen] = useState(false);
+  const [newMandateData, setNewMandateData] = useState<Partial<Mandate>>({});
+  const [isCreatingMandate, setIsCreatingMandate] = useState(false);
+  
+  // Mandate update state
+  const [isUpdatingMandate, setIsUpdatingMandate] = useState(false);
+  const [mandateUpdateError, setMandateUpdateError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadData() {
-      const [leadData, activitiesData, mandateData] = await Promise.all([
+      const [leadData, activitiesData, mandateData, matchesData] = await Promise.all([
         getLeadById(leadId),
         getActivitiesByLeadId(leadId),
         getMandateByLeadId(leadId),
+        getMatches(),
       ]);
       
       setLead(leadData);
       setActivities(activitiesData);
       setMandate(mandateData);
+      setMatches(matchesData);
       
       if (leadData) {
         const intel = await getLeadIntelligence(leadId, leadData);
@@ -157,6 +184,51 @@ export default function SellerDetailPage() {
         </Link>
       </div>
     );
+  }
+
+  // Update mandate status handler
+  async function updateMandateStatus(newStatus: MandateStatus) {
+    if (!mandate || mandate.status === newStatus) return;
+    
+    setIsUpdatingMandate(true);
+    setMandateUpdateError(null);
+    
+    try {
+      console.log(`Updating mandate ${mandate.id} status: ${mandate.status} -> ${newStatus}`);
+      
+      const updatedMandate = { 
+        ...mandate, 
+        status: newStatus,
+        signed_at: newStatus === 'signed' ? new Date().toISOString() : mandate.signed_at,
+        updated_at: new Date().toISOString(),
+      };
+      
+      await updateMandate(updatedMandate);
+      
+      console.log(`Mandate updated successfully, new status: ${newStatus}`);
+      
+      // Update local state immediately
+      setMandate(updatedMandate);
+      
+      // Update lead status locally for immediate UI feedback
+      const statusMap: Record<MandateStatus, LeadStatus> = {
+        'draft': 'mandate_proposed',
+        'sent': 'mandate_sent',
+        'signed': 'mandate_signed',
+        'expired': 'mandate_proposed',
+        'terminated': 'mandate_proposed',
+      };
+      const newLeadStatus = statusMap[newStatus];
+      if (newLeadStatus) {
+        setLead({ ...lead, status: newLeadStatus } as Lead);
+        console.log(`Local lead status updated to: ${newLeadStatus}`);
+      }
+    } catch (error) {
+      console.error('Failed to update mandate status:', error);
+      setMandateUpdateError('Failed to update status. Please try again.');
+    } finally {
+      setIsUpdatingMandate(false);
+    }
   }
 
   const status = statusMap[lead.status];
@@ -257,13 +329,29 @@ export default function SellerDetailPage() {
             <ActionButton icon={MessageSquare} label="WhatsApp" />
             <ActionButton icon={Calendar} label="Schedule" />
             <div className="flex-1" />
-            <Button size="sm" className="gap-2 bg-white text-black hover:bg-white/90">
+            <Button 
+              size="sm" 
+              className="gap-2 bg-white text-black hover:bg-white/90"
+              onClick={() => {
+                if (!mandate) {
+                  setIsMandateDrawerOpen(true);
+                }
+              }}
+            >
               <FileSignature className="w-4 h-4" />
-              {mandate ? 'Update Mandate' : 'Propose Mandate'}
+              {mandate ? 'Mandate Active' : 'Convert to Mandate'}
             </Button>
           </div>
         </div>
       </section>
+
+      {/* NEXT ACTION CARD */}
+      <NextActionCard 
+        lead={lead}
+        activities={activities}
+        mandate={mandate}
+        intelligence={intelligence}
+      />
 
       {/* MAIN GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -386,11 +474,26 @@ export default function SellerDetailPage() {
 
           {/* Activity Timeline */}
           <section>
-            <SectionHeader 
-              icon={Clock}
-              title="Activity Timeline"
-              subtitle="Recent interactions and notes"
-            />
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-white/[0.06] flex items-center justify-center">
+                  <Clock className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="font-medium">Activity Timeline</h2>
+                  <p className="text-sm text-white/40">Recent interactions and notes</p>
+                </div>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="gap-2 border-white/10 hover:bg-white/[0.04]"
+                onClick={() => setIsActivityDrawerOpen(true)}
+              >
+                <Plus className="w-4 h-4" />
+                Add Activity
+              </Button>
+            </div>
             <div className="space-y-1">
               {activities.length > 0 ? (
                 activities.map((activity) => {
@@ -405,7 +508,10 @@ export default function SellerDetailPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between">
-                          <p className="font-medium">{activityTypeMap[activity.type].label}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium">{activityTypeMap[activity.type].label}</p>
+                            <span className="text-xs text-white/30">• {activity.operator_name}</span>
+                          </div>
                           <span className="text-xs text-white/30">
                             {new Date(activity.created_at).toLocaleDateString()}
                           </span>
@@ -434,33 +540,13 @@ export default function SellerDetailPage() {
             />
             
             {mandate ? (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-3 rounded-lg bg-white/[0.03]">
-                  <span className="text-white/60 text-sm">Status</span>
-                  <Badge className={`${mandateStatusMap[mandate.status]?.color || mandateStatusMap.draft.color} border-0`}>
-                    {mandateStatusMap[mandate.status]?.label || mandate.status}
-                  </Badge>
-                </div>
-                <div className="flex items-center justify-between p-3 rounded-lg bg-white/[0.03]">
-                  <span className="text-white/60 text-sm">Type</span>
-                  <span className="text-white font-medium">
-                    {mandate.exclusive ? 'Exclusive' : 'Non-Exclusive'}
-                  </span>
-                </div>
-                
-                {mandate.status === 'signed' && (
-                  <Button className="w-full gap-2 bg-white text-black hover:bg-white/90">
-                    <Sparkles className="w-4 h-4" />
-                    Activation Strategy
-                  </Button>
-                )}
-                {mandate.status === 'sent' && (
-                  <Button className="w-full gap-2 bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 border-0">
-                    <Clock className="w-4 h-4" />
-                    Follow Up
-                  </Button>
-                )}
-              </div>
+              <MandateActivationCard 
+                mandate={mandate} 
+                matches={matches}
+                isUpdatingMandate={isUpdatingMandate}
+                mandateUpdateError={mandateUpdateError}
+                onStatusChange={updateMandateStatus}
+              />
             ) : (
               <div className="text-center py-6">
                 <div className="w-12 h-12 rounded-full bg-white/[0.04] flex items-center justify-center mx-auto mb-3">
@@ -472,9 +558,12 @@ export default function SellerDetailPage() {
                     ? 'Ready to propose' 
                     : 'Continue building relationship'}
                 </p>
-                <Button className="w-full gap-2 bg-white text-black hover:bg-white/90">
+                <Button 
+                  className="w-full gap-2 bg-white text-black hover:bg-white/90"
+                  onClick={() => setIsMandateDrawerOpen(true)}
+                >
                   <FileSignature className="w-4 h-4" />
-                  Propose Mandate
+                  Convert to Mandate
                 </Button>
               </div>
             )}
@@ -536,8 +625,10 @@ export default function SellerDetailPage() {
           subtitle={`Editing ${lead.owner_name}`}
           onSave={async () => {
             setIsSaving(true);
-            // Simulate API call - in production, this would call your backend
+            // Persist to Supabase (with localStorage fallback)
             await new Promise(resolve => setTimeout(resolve, 500));
+            
+            await updateLead(editedLead);
             setLead(editedLead);
             setIsSaving(false);
             setIsEditDrawerOpen(false);
@@ -550,7 +641,169 @@ export default function SellerDetailPage() {
           />
         </EditDrawer>
       )}
+
+      {/* Add Activity Drawer */}
+      <EditDrawer
+        isOpen={isActivityDrawerOpen}
+        onClose={() => {
+          setIsActivityDrawerOpen(false);
+          setNewActivityData({ type: "note", content: "", operator_name: "Agent" });
+        }}
+        title="Add Activity"
+        subtitle="Log an interaction or note"
+        onSave={async () => {
+          if (!newActivityData.content.trim()) return;
+          
+          setIsAddingActivity(true);
+          try {
+            const newActivity = await addActivity({
+              type: newActivityData.type,
+              content: newActivityData.content,
+              operator_name: newActivityData.operator_name,
+              lead_id: leadId,
+              buyer_id: null,
+              match_id: null,
+              mandate_id: null,
+            });
+            
+            // Update local state immediately
+            setActivities(prev => [newActivity, ...prev]);
+            
+            // Close drawer and reset form
+            setIsActivityDrawerOpen(false);
+            setNewActivityData({ type: "note", content: "", operator_name: "Agent" });
+          } catch (error) {
+            console.error("Failed to add activity:", error);
+          } finally {
+            setIsAddingActivity(false);
+          }
+        }}
+        isSaving={isAddingActivity}
+        saveLabel="Save Activity"
+      >
+        <ActivityCreatePanel 
+          onChange={setNewActivityData}
+          defaultOperator="Agent"
+        />
+      </EditDrawer>
+
+      {/* Create Mandate Drawer */}
+      {!mandate && (
+        <EditDrawer
+          isOpen={isMandateDrawerOpen}
+          onClose={() => {
+            setIsMandateDrawerOpen(false);
+            setNewMandateData({});
+          }}
+          title="Convert to Mandate"
+          subtitle={`Create mandate for ${lead.owner_name}`}
+          onSave={async () => {
+            if (!newMandateData.title || !newMandateData.city) return;
+            
+            setIsCreatingMandate(true);
+            try {
+              const mandateData: Mandate = {
+                id: crypto.randomUUID(),
+                lead_id: leadId,
+                title: newMandateData.title,
+                asking_price: newMandateData.asking_price || lead.price,
+                city: newMandateData.city,
+                neighborhood: newMandateData.neighborhood || lead.neighborhood,
+                property_type: newMandateData.property_type || lead.property_type,
+                area_m2: newMandateData.area_m2 || lead.area_m2,
+                bedrooms: newMandateData.bedrooms || lead.bedrooms,
+                exclusive: newMandateData.exclusive ?? true,
+                status: newMandateData.status || 'draft',
+                agency_name: newMandateData.agency_name || 'Dealock Agency',
+                signing_mode: newMandateData.signing_mode || 'electronic',
+                signed_at: newMandateData.status === 'signed' ? new Date().toISOString() : null,
+                notes: newMandateData.notes || '',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              };
+              
+              await createMandate(mandateData);
+              
+              // Update local state immediately (lead.status is synced centrally in createMandate)
+              setMandate(mandateData);
+              
+              // Update lead status locally for immediate UI feedback
+              if (lead) {
+                const statusMap: Record<string, LeadStatus> = {
+                  'draft': 'mandate_proposed',
+                  'sent': 'mandate_sent', 
+                  'signed': 'mandate_signed',
+                };
+                const newStatus = statusMap[mandateData.status];
+                if (newStatus) {
+                  setLead({ ...lead, status: newStatus } as Lead);
+                }
+              }
+              
+              // Close drawer and reset form
+              setIsMandateDrawerOpen(false);
+              setNewMandateData({});
+            } catch (error) {
+              console.error("Failed to create mandate:", error);
+            } finally {
+              setIsCreatingMandate(false);
+            }
+          }}
+          isSaving={isCreatingMandate}
+          saveLabel="Create Mandate"
+        >
+          <MandateCreatePanel
+            sellerId={leadId}
+            sellerData={{
+              owner_name: lead.owner_name,
+              price: lead.price,
+              city: lead.city,
+              neighborhood: lead.neighborhood,
+              property_type: lead.property_type,
+              area_m2: lead.area_m2 ?? undefined,
+              bedrooms: lead.bedrooms ?? undefined,
+            }}
+            onChange={setNewMandateData}
+          />
+        </EditDrawer>
+      )}
     </div>
+  );
+}
+
+// ============================================
+// STATUS BUTTON COMPONENT
+// ============================================
+
+function StatusButton({ 
+  active, 
+  onClick, 
+  disabled,
+  color,
+  children 
+}: { 
+  active: boolean; 
+  onClick: () => void; 
+  disabled?: boolean;
+  color: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`relative px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+        active 
+          ? `bg-white/10 text-${color} shadow-sm` 
+          : 'text-white/40 hover:text-white/60 hover:bg-white/[0.04]'
+      } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+    >
+      {active && (
+        <span className={`absolute inset-x-0 bottom-0 h-0.5 bg-${color} rounded-full`} />
+      )}
+      {children}
+    </button>
   );
 }
 
@@ -564,6 +817,201 @@ function ActionButton({ icon: Icon, label }: { icon: React.ElementType; label: s
       <Icon className="w-4 h-4" />
       {label}
     </Button>
+  );
+}
+
+function NextActionCard({ 
+  lead, 
+  activities, 
+  mandate,
+  intelligence 
+}: { 
+  lead: Lead; 
+  activities: Activity[]; 
+  mandate: Mandate | null;
+  intelligence: SellerIntelligence | null;
+}) {
+  const nextAction = getSellerNextAction(
+    lead, 
+    activities, 
+    mandate, 
+    intelligence?.mandate_readiness_score
+  );
+  
+  const daysSinceActivity = getDaysSinceLastActivity(activities);
+  const staleness = getStaleness(daysSinceActivity);
+  
+  return (
+    <section className="mb-8">
+      <div className={`surface-elevated rounded-2xl p-6 border ${urgencyColor(nextAction.urgency)}`}>
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          {/* Left: Action */}
+          <div className="flex-1">
+            <div className="flex items-center gap-3 mb-2">
+              <span className={`px-2.5 py-1 rounded-lg text-xs font-medium uppercase tracking-wider ${
+                nextAction.urgency === 'critical' ? 'bg-red-500 text-white' :
+                nextAction.urgency === 'high' ? 'bg-amber-500 text-black' :
+                nextAction.urgency === 'normal' ? 'bg-blue-500 text-white' :
+                'bg-white/20 text-white'
+              }`}>
+                {nextAction.urgency}
+              </span>
+              {daysSinceActivity > 3 && (
+                <span className={`text-xs ${staleness.color}`}>
+                  {staleness.label} · {daysSinceActivity} days
+                </span>
+              )}
+            </div>
+            <h2 className="text-xl font-semibold mb-1">{nextAction.action}</h2>
+            <p className="text-sm text-white/60">{nextAction.reason}</p>
+            {nextAction.suggested && (
+              <p className="text-sm text-white/40 mt-2">
+                <span className="text-white/50">Suggested:</span> {nextAction.suggested}
+              </p>
+            )}
+          </div>
+          
+          {/* Right: Quick Action */}
+          <div className="flex items-center gap-2">
+            <Button 
+              size="sm" 
+              className="gap-2 bg-white text-black hover:bg-white/90"
+            >
+              <Zap className="w-4 h-4" />
+              Take Action
+            </Button>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ============================================
+// MANDATE ACTIVATION CARD
+// ============================================
+
+function MandateActivationCard({
+  mandate,
+  matches,
+  isUpdatingMandate,
+  mandateUpdateError,
+  onStatusChange,
+}: {
+  mandate: Mandate;
+  matches: MatchOpportunity[];
+  isUpdatingMandate: boolean;
+  mandateUpdateError: string | null;
+  onStatusChange: (status: MandateStatus) => void;
+}) {
+  const activation = calculateActivationState(mandate, matches);
+  const colors = getReadinessColor(activation.readiness);
+  const mandateMatches = matches.filter(m => m.target_id === mandate.id);
+  
+  return (
+    <div className="space-y-4">
+      {/* Activation Readiness Header */}
+      <div className={`p-4 rounded-xl ${colors.bg} border border-white/[0.06]`}>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs text-white/40 uppercase tracking-wider">Activation Readiness</span>
+          <span className={`text-xs font-medium ${colors.text}`}>
+            {activation.readinessPercent}%
+          </span>
+        </div>
+        <div className="h-2 bg-white/[0.08] rounded-full overflow-hidden mb-2">
+          <div 
+            className={`h-full ${colors.bar} rounded-full transition-all duration-500`}
+            style={{ width: `${activation.readinessPercent}%` }}
+          />
+        </div>
+        <p className="text-sm text-white/70">{activation.nextStep}</p>
+        <p className="text-xs text-white/50 mt-1">{activation.reason}</p>
+      </div>
+      
+      {/* Match Count */}
+      {mandateMatches.length > 0 && (
+        <div className="flex items-center justify-between p-3 rounded-lg bg-white/[0.03]">
+          <span className="text-white/60 text-sm">Linked Matches</span>
+          <div className="flex items-center gap-2">
+            <span className="text-white font-medium">{mandateMatches.length}</span>
+            {activation.hasExcellentMatch && (
+              <span className="px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-400 text-[10px]">
+                Excellent
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+      
+      {/* Status Control */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-white/40 uppercase tracking-wider">Mandate Status</span>
+          {isUpdatingMandate && (
+            <span className="text-xs text-white/40">Saving...</span>
+          )}
+        </div>
+        <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+          <StatusButton 
+            active={mandate.status === 'draft'}
+            onClick={() => onStatusChange('draft')}
+            disabled={isUpdatingMandate}
+            color="white/40"
+          >
+            Draft
+          </StatusButton>
+          <StatusButton 
+            active={mandate.status === 'sent'}
+            onClick={() => onStatusChange('sent')}
+            disabled={isUpdatingMandate}
+            color="amber-400"
+          >
+            Sent
+          </StatusButton>
+          <StatusButton 
+            active={mandate.status === 'signed'}
+            onClick={() => onStatusChange('signed')}
+            disabled={isUpdatingMandate}
+            color="emerald-400"
+          >
+            Signed
+          </StatusButton>
+        </div>
+        {mandateUpdateError && (
+          <p className="text-xs text-red-400">{mandateUpdateError}</p>
+        )}
+      </div>
+      
+      {/* Exclusivity Badge */}
+      <div className="flex items-center justify-between p-3 rounded-lg bg-white/[0.03]">
+        <span className="text-white/60 text-sm">Type</span>
+        <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider ${
+          mandate.exclusive 
+            ? 'bg-emerald-500/15 text-emerald-400' 
+            : 'bg-amber-500/15 text-amber-400'
+        }`}>
+          {mandate.exclusive ? 'Exclusive' : 'Non-Exclusive'}
+        </span>
+      </div>
+      
+      {/* Action Button */}
+      {activation.isComplete ? (
+        <Button className="w-full gap-2 bg-white text-black hover:bg-white/90">
+          <Sparkles className="w-4 h-4" />
+          Launch Activation
+        </Button>
+      ) : mandate.status === 'signed' && mandateMatches.length === 0 ? (
+        <Button className="w-full gap-2 bg-violet-500/20 text-violet-400 hover:bg-violet-500/30 border-0">
+          <Target className="w-4 h-4" />
+          Find Buyer Matches
+        </Button>
+      ) : mandate.status === 'sent' ? (
+        <Button className="w-full gap-2 bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 border-0">
+          <Clock className="w-4 h-4" />
+          Follow Up
+        </Button>
+      ) : null}
+    </div>
   );
 }
 

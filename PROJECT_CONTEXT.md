@@ -140,6 +140,14 @@ Currently using **typed mock data** with a clear path to live backend:
 - Easy swap: uncomment Supabase client code when ready
 - No backend dependency for development
 
+### List Rendering Stability (Post-Stabilization)
+
+- All list sections render fully (no arbitrary slice() truncation)
+- Newly created records appear immediately via deterministic sorting
+- Sorting: priority/urgency first, then creation date (newest first)
+- Functional state updates prevent stale closure issues
+- Safe defaults ensure records always appear in a visible group
+
 ---
 
 ## Multilingual Architecture

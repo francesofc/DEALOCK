@@ -107,6 +107,14 @@ The following git commands must NEVER be used unless explicitly requested by the
 - Don't break existing patterns without good reason
 - Preserve the premium feel in every change
 
+### List Rendering Stability Rules
+
+- **Never use slice()** to truncate list sections that should show all records
+- **Always use functional state updates** when adding records (setItems(prev => [...]))
+- **Never use conditional guards** that silently skip creating records
+- **Always include secondary sorting** by created_at to ensure new records appear predictably
+- **Ensure safe defaults** so new records fall into a visible group (not hidden/filtered out)
+
 ---
 
 ## 7. OUTPUT RULES

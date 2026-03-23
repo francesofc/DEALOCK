@@ -1,10 +1,7 @@
 import { Lead, LeadStatus } from '@/types/database'
+import { createClient } from '@/lib/supabase/client'
 
-// PHASE 2: Using typed mock data
-// TODO: Switch to Supabase when ready by uncommenting the createClient import
-// import { createClient } from '@/lib/supabase/client'
-
-// Demo/seed data matching the Supabase schema
+// Demo/seed data for initial load
 const mockLeads: Lead[] = [
   {
     id: '11111111-1111-1111-1111-111111111111',
@@ -224,39 +221,182 @@ const mockLeads: Lead[] = [
   },
 ]
 
+// Check if Supabase is configured
+const isSupabaseConfigured = () => {
+  return !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)
+}
+
 // Data service functions
 export async function getLeads(): Promise<Lead[]> {
-  // TODO: Replace with Supabase when ready:
-  // const supabase = createClient()
-  // const { data, error } = await supabase.from('leads').select('*').order('created_at', { ascending: false })
-  // if (error) throw error
-  // return data || []
+  if (!isSupabaseConfigured()) {
+    return Promise.resolve([...mockLeads])
+  }
+
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('leads')
+    .select('*')
+    .order('created_at', { ascending: false })
   
-  return Promise.resolve([...mockLeads])
+  if (error) {
+    console.error('Error fetching leads:', error)
+    return [...mockLeads]
+  }
+  
+  // If no data in Supabase yet, return mock data
+  if (!data || data.length === 0) {
+    return [...mockLeads]
+  }
+  
+  return data as Lead[]
 }
 
 export async function getLeadById(id: string): Promise<Lead | null> {
-  // TODO: Replace with Supabase when ready:
-  // const supabase = createClient()
-  // const { data, error } = await supabase.from('leads').select('*').eq('id', id).single()
-  // if (error) throw error
-  // return data
+  if (!isSupabaseConfigured()) {
+    const lead = mockLeads.find(l => l.id === id)
+    return Promise.resolve(lead || null)
+  }
+
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('leads')
+    .select('*')
+    .eq('id', id)
+    .single()
   
-  const lead = mockLeads.find(l => l.id === id)
-  return Promise.resolve(lead || null)
+  if (error) {
+    // If not found in Supabase, check mock data
+    const mockLead = mockLeads.find(l => l.id === id)
+    return mockLead || null
+  }
+  
+  return data as Lead
+}
+
+export async function createLead(lead: Lead): Promise<void> {
+  if (!isSupabaseConfigured()) {
+    console.warn('Supabase not configured, lead created in memory only')
+    return Promise.resolve()
+  }
+
+  const supabase = createClient()
+  const insertData = {
+    id: lead.id,
+    owner_name: lead.owner_name,
+    email: lead.email,
+    phone: lead.phone,
+    whatsapp_status: lead.whatsapp_status,
+    source: lead.source,
+    listing_url: lead.listing_url,
+    property_type: lead.property_type,
+    neighborhood: lead.neighborhood,
+    city: lead.city,
+    price: lead.price,
+    area_m2: lead.area_m2,
+    bedrooms: lead.bedrooms,
+    seller_type: lead.seller_type,
+    language_preference: lead.language_preference,
+    days_on_market_estimate: lead.days_on_market_estimate,
+    asking_vs_market_delta: lead.asking_vs_market_delta,
+    photos_quality_score: lead.photos_quality_score,
+    description_quality_score: lead.description_quality_score,
+    priority_score: lead.priority_score,
+    seller_profile: lead.seller_profile,
+    status: lead.status,
+    notes: lead.notes,
+  }
+  const { error } = await (supabase as any)
+    .from('leads')
+    .insert(insertData)
+  
+  if (error) {
+    console.error('Error creating lead:', error)
+    throw error
+  }
+}
+
+export async function updateLead(lead: Lead): Promise<void> {
+  if (!isSupabaseConfigured()) {
+    console.warn('Supabase not configured, lead updated in memory only')
+    return Promise.resolve()
+  }
+
+  const supabase = createClient()
+  const updateData = {
+    owner_name: lead.owner_name,
+    email: lead.email,
+    phone: lead.phone,
+    whatsapp_status: lead.whatsapp_status,
+    source: lead.source,
+    listing_url: lead.listing_url,
+    property_type: lead.property_type,
+    neighborhood: lead.neighborhood,
+    city: lead.city,
+    price: lead.price,
+    area_m2: lead.area_m2,
+    bedrooms: lead.bedrooms,
+    seller_type: lead.seller_type,
+    language_preference: lead.language_preference,
+    days_on_market_estimate: lead.days_on_market_estimate,
+    asking_vs_market_delta: lead.asking_vs_market_delta,
+    photos_quality_score: lead.photos_quality_score,
+      description_quality_score: lead.description_quality_score,
+    priority_score: lead.priority_score,
+    seller_profile: lead.seller_profile,
+    status: lead.status,
+    notes: lead.notes,
+    updated_at: new Date().toISOString(),
+  }
+  const { error } = await (supabase as any)
+    .from('leads')
+    .update(updateData)
+    .eq('id', lead.id)
+  
+  if (error) {
+    console.error('Error updating lead:', error)
+    throw error
+  }
 }
 
 export async function getLeadsByStatus(status: LeadStatus): Promise<Lead[]> {
-  const leads = mockLeads.filter(l => l.status === status)
-  return Promise.resolve([...leads])
+  if (!isSupabaseConfigured()) {
+    const leads = mockLeads.filter(l => l.status === status)
+    return Promise.resolve([...leads])
+  }
+
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('leads')
+    .select('*')
+    .eq('status', status)
+    .order('created_at', { ascending: false })
+  
+  if (error) {
+    console.error('Error fetching leads by status:', error)
+    return mockLeads.filter(l => l.status === status)
+  }
+  
+  return (data || []) as Lead[]
 }
 
 export async function updateLeadStatus(id: string, status: LeadStatus): Promise<void> {
-  // TODO: Replace with Supabase when ready
-  const lead = mockLeads.find(l => l.id === id)
-  if (lead) {
-    lead.status = status
-    lead.updated_at = new Date().toISOString()
+  if (!isSupabaseConfigured()) {
+    const lead = mockLeads.find(l => l.id === id)
+    if (lead) {
+      lead.status = status
+      lead.updated_at = new Date().toISOString()
+    }
+    return Promise.resolve()
   }
-  return Promise.resolve()
+
+  const supabase = createClient()
+  const { error } = await (supabase as any)
+    .from('leads')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', id)
+  
+  if (error) {
+    console.error('Error updating lead status:', error)
+    throw error
+  }
 }

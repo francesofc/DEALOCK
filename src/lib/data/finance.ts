@@ -1,4 +1,5 @@
 import { FinanceProfile, FinanceStatus, DocumentType, DocumentCheck } from '@/types/database'
+import { createClient } from '@/lib/supabase/client'
 
 // Helper to create document check
 const createDoc = (type: DocumentType, present: boolean, verified: boolean): DocumentCheck => ({
@@ -9,7 +10,7 @@ const createDoc = (type: DocumentType, present: boolean, verified: boolean): Doc
 })
 
 // Mock finance profiles for Dealock finance readiness layer
-export const mockFinanceProfiles: FinanceProfile[] = [
+const mockFinanceProfiles: FinanceProfile[] = [
   {
     id: 'finance-1',
     created_at: '2026-01-20T10:00:00Z',
@@ -188,30 +189,228 @@ export const mockFinanceProfiles: FinanceProfile[] = [
   },
 ]
 
+// Check if Supabase is configured
+const isSupabaseConfigured = () => {
+  return !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)
+}
+
 export async function getFinanceProfiles(): Promise<FinanceProfile[]> {
-  return mockFinanceProfiles
+  if (!isSupabaseConfigured()) {
+    return [...mockFinanceProfiles]
+  }
+
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('finance_profiles')
+    .select('*')
+    .order('created_at', { ascending: false })
+  
+  if (error) {
+    console.error('Error fetching finance profiles:', error)
+    return [...mockFinanceProfiles]
+  }
+  
+  if (!data || data.length === 0) {
+    return [...mockFinanceProfiles]
+  }
+  
+  // Convert JSON documents back to DocumentCheck array
+  return (data as any[]).map(row => ({
+    ...row,
+    documents: row.documents || [],
+  })) as FinanceProfile[]
 }
 
 export async function getFinanceProfileById(id: string): Promise<FinanceProfile | null> {
-  return mockFinanceProfiles.find(f => f.id === id) || null
+  if (!isSupabaseConfigured()) {
+    return mockFinanceProfiles.find(f => f.id === id) || null
+  }
+
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('finance_profiles')
+    .select('*')
+    .eq('id', id)
+    .single()
+  
+  if (error || !data) {
+    return mockFinanceProfiles.find(f => f.id === id) || null
+  }
+  
+  return {
+    ...(data as any),
+    documents: (data as any).documents || [],
+  } as FinanceProfile
 }
 
 export async function getFinanceProfileByBuyer(buyerId: string): Promise<FinanceProfile | null> {
-  return mockFinanceProfiles.find(f => f.buyer_id === buyerId) || null
+  if (!isSupabaseConfigured()) {
+    return mockFinanceProfiles.find(f => f.buyer_id === buyerId) || null
+  }
+
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('finance_profiles')
+    .select('*')
+    .eq('buyer_id', buyerId)
+    .single()
+  
+  if (error || !data) {
+    return mockFinanceProfiles.find(f => f.buyer_id === buyerId) || null
+  }
+  
+  return {
+    ...(data as any),
+    documents: (data as any).documents || [],
+  } as FinanceProfile
+}
+
+export async function saveFinanceProfile(profile: FinanceProfile): Promise<void> {
+  if (!isSupabaseConfigured()) {
+    console.warn('Supabase not configured, finance profile saved in memory only')
+    return Promise.resolve()
+  }
+
+  const supabase = createClient()
+  
+  // Check if profile already exists
+  const { data: existing } = await supabase
+    .from('finance_profiles')
+    .select('id')
+    .eq('id', profile.id)
+    .single()
+  
+  if (existing) {
+    // Update
+    const updateData = {
+      status: profile.status,
+      documents: profile.documents,
+      documents_complete: profile.documents_complete,
+      completion_percentage: profile.completion_percentage,
+      annual_income: profile.annual_income,
+      available_down_payment: profile.available_down_payment,
+      existing_debt_monthly: profile.existing_debt_monthly,
+      estimated_max_budget: profile.estimated_max_budget,
+      estimated_monthly_payment: profile.estimated_monthly_payment,
+      affordability_status: profile.affordability_status,
+      under_review_since: profile.under_review_since,
+      reviewed_by: profile.reviewed_by,
+      review_notes: profile.review_notes,
+      missing_documents: profile.missing_documents,
+      recommended_actions: profile.recommended_actions,
+      updated_at: new Date().toISOString(),
+    }
+    const { error } = await (supabase as any)
+      .from('finance_profiles')
+      .update(updateData)
+      .eq('id', profile.id)
+    
+    if (error) {
+      console.error('Error updating finance profile:', error)
+      throw error
+    }
+  } else {
+    // Insert
+    const insertData = {
+      id: profile.id,
+      buyer_id: profile.buyer_id,
+      status: profile.status,
+      documents: profile.documents,
+      documents_complete: profile.documents_complete,
+      completion_percentage: profile.completion_percentage,
+      annual_income: profile.annual_income,
+      available_down_payment: profile.available_down_payment,
+      existing_debt_monthly: profile.existing_debt_monthly,
+      estimated_max_budget: profile.estimated_max_budget,
+      estimated_monthly_payment: profile.estimated_monthly_payment,
+      affordability_status: profile.affordability_status,
+      under_review_since: profile.under_review_since,
+      reviewed_by: profile.reviewed_by,
+      review_notes: profile.review_notes,
+      missing_documents: profile.missing_documents,
+      recommended_actions: profile.recommended_actions,
+    }
+    const { error } = await (supabase as any)
+      .from('finance_profiles')
+      .insert(insertData)
+    
+    if (error) {
+      console.error('Error creating finance profile:', error)
+      throw error
+    }
+  }
 }
 
 export async function getFinanceProfilesByStatus(status: FinanceStatus): Promise<FinanceProfile[]> {
-  return mockFinanceProfiles.filter(f => f.status === status)
+  if (!isSupabaseConfigured()) {
+    return mockFinanceProfiles.filter(f => f.status === status)
+  }
+
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('finance_profiles')
+    .select('*')
+    .eq('status', status)
+  
+  if (error) {
+    console.error('Error fetching finance profiles by status:', error)
+    return mockFinanceProfiles.filter(f => f.status === status)
+  }
+  
+  return (data || []).map((row: any) => ({
+    ...row,
+    documents: row.documents || [],
+  })) as FinanceProfile[]
 }
 
 export async function getBlockedFinanceProfiles(): Promise<FinanceProfile[]> {
-  return mockFinanceProfiles.filter(f => 
-    f.status === 'incomplete' || f.status === 'needs_clarification'
-  )
+  if (!isSupabaseConfigured()) {
+    return mockFinanceProfiles.filter(f => 
+      f.status === 'incomplete' || f.status === 'needs_clarification'
+    )
+  }
+
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('finance_profiles')
+    .select('*')
+    .in('status', ['incomplete', 'needs_clarification'])
+  
+  if (error) {
+    console.error('Error fetching blocked finance profiles:', error)
+    return mockFinanceProfiles.filter(f => 
+      f.status === 'incomplete' || f.status === 'needs_clarification'
+    )
+  }
+  
+  return (data || []).map((row: any) => ({
+    ...row,
+    documents: row.documents || [],
+  })) as FinanceProfile[]
 }
 
 export async function getReadyFinanceProfiles(): Promise<FinanceProfile[]> {
-  return mockFinanceProfiles.filter(f => 
-    f.status === 'ready_to_progress' || f.status === 'strong_buyer'
-  )
+  if (!isSupabaseConfigured()) {
+    return mockFinanceProfiles.filter(f => 
+      f.status === 'ready_to_progress' || f.status === 'strong_buyer'
+    )
+  }
+
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('finance_profiles')
+    .select('*')
+    .in('status', ['ready_to_progress', 'strong_buyer'])
+  
+  if (error) {
+    console.error('Error fetching ready finance profiles:', error)
+    return mockFinanceProfiles.filter(f => 
+      f.status === 'ready_to_progress' || f.status === 'strong_buyer'
+    )
+  }
+  
+  return (data || []).map((row: any) => ({
+    ...row,
+    documents: row.documents || [],
+  })) as FinanceProfile[]
 }

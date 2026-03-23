@@ -1,7 +1,8 @@
 import { Activity, ActivityType } from '@/types/database'
+import { createClient } from '@/lib/supabase/client'
 
-// PHASE 2: Using typed mock data
-// TODO: Switch to Supabase when ready
+// PHASE 2: Using typed mock data with Supabase persistence
+// TODO: Full Supabase integration when ready
 
 const mockActivities: Activity[] = [
   // Marie Dupont activities
@@ -164,32 +165,146 @@ const mockActivities: Activity[] = [
   },
 ]
 
+// Check if Supabase is configured
+const isSupabaseConfigured = () => {
+  return !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)
+}
+
 export async function getActivities(): Promise<Activity[]> {
-  return Promise.resolve([...mockActivities].sort((a, b) => 
-    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  ))
+  if (!isSupabaseConfigured()) {
+    return Promise.resolve([...mockActivities].sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    ))
+  }
+
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('activities')
+    .select('*')
+    .order('created_at', { ascending: false })
+  
+  if (error) {
+    console.error('Error fetching activities:', error)
+    return [...mockActivities].sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )
+  }
+  
+  if (!data || data.length === 0) {
+    return [...mockActivities].sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )
+  }
+  
+  return data as Activity[]
 }
 
 export async function getActivitiesByLeadId(leadId: string): Promise<Activity[]> {
-  const activities = mockActivities
-    .filter(a => a.lead_id === leadId)
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-  return Promise.resolve([...activities])
+  if (!isSupabaseConfigured()) {
+    const activities = mockActivities
+      .filter(a => a.lead_id === leadId)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    return Promise.resolve([...activities])
+  }
+
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('activities')
+    .select('*')
+    .eq('lead_id', leadId)
+    .order('created_at', { ascending: false })
+  
+  if (error) {
+    console.error('Error fetching activities by lead:', error)
+    const activities = mockActivities
+      .filter(a => a.lead_id === leadId)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    return [...activities]
+  }
+  
+  // Merge with mock activities for this lead
+  const mockForLead = mockActivities.filter(a => a.lead_id === leadId)
+  const storedData = (data || []) as Activity[]
+  const storedIds = new Set(storedData.map(a => a.id))
+  const combined = [
+    ...storedData,
+    ...mockForLead.filter(a => !storedIds.has(a.id))
+  ]
+  
+  return combined.sort((a, b) => 
+    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )
 }
 
 export async function getActivitiesByBuyerId(buyerId: string): Promise<Activity[]> {
-  const activities = mockActivities
-    .filter(a => a.buyer_id === buyerId)
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-  return Promise.resolve([...activities])
+  if (!isSupabaseConfigured()) {
+    const activities = mockActivities
+      .filter(a => a.buyer_id === buyerId)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    return Promise.resolve([...activities])
+  }
+
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('activities')
+    .select('*')
+    .eq('buyer_id', buyerId)
+    .order('created_at', { ascending: false })
+  
+  if (error) {
+    console.error('Error fetching activities by buyer:', error)
+    const activities = mockActivities
+      .filter(a => a.buyer_id === buyerId)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    return [...activities]
+  }
+  
+  // Merge with mock activities for this buyer
+  const mockForBuyer = mockActivities.filter(a => a.buyer_id === buyerId)
+  const storedData = (data || []) as Activity[]
+  const storedIds = new Set(storedData.map(a => a.id))
+  const combined = [
+    ...storedData,
+    ...mockForBuyer.filter(a => !storedIds.has(a.id))
+  ]
+  
+  return combined.sort((a, b) => 
+    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )
 }
 
 export async function addActivity(activity: Omit<Activity, 'id' | 'created_at'>): Promise<Activity> {
   const newActivity: Activity = {
     ...activity,
-    id: `new-${Date.now()}`,
+    id: crypto.randomUUID(),
     created_at: new Date().toISOString(),
   }
-  mockActivities.push(newActivity)
-  return Promise.resolve(newActivity)
+
+  if (!isSupabaseConfigured()) {
+    mockActivities.push(newActivity)
+    return Promise.resolve(newActivity)
+  }
+
+  const supabase = createClient()
+  const insertData = {
+    id: newActivity.id,
+    type: newActivity.type,
+    content: newActivity.content,
+    operator_name: newActivity.operator_name,
+    lead_id: newActivity.lead_id,
+    buyer_id: newActivity.buyer_id,
+    match_id: newActivity.match_id,
+    mandate_id: newActivity.mandate_id,
+  }
+  const { error } = await (supabase as any)
+    .from('activities')
+    .insert(insertData)
+  
+  if (error) {
+    console.error('Error adding activity:', error)
+    // Fallback to mock
+    mockActivities.push(newActivity)
+  }
+  
+  return newActivity
 }

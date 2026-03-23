@@ -122,27 +122,38 @@ export type MatchStatus =
 
 export type MatchScore = 'weak' | 'fair' | 'good' | 'excellent'
 
+export type MatchScoreBand = 'excellent' | 'good' | 'fair' | 'weak'
+
+export type TargetType = 'mandate' | 'seller'
+
 export interface MatchOpportunity {
   id: string
   created_at: string
   updated_at: string
   
-  // Connections
+  // Core relationships (new schema)
   buyer_id: string
-  seller_id: string
-  mandate_id: string | null
+  target_type: TargetType
+  target_id: string
   
-  // Match Details
-  match_score: MatchScore
-  match_score_value: number // 0-100
+  // Legacy connections (for backward compatibility during transition)
+  seller_id?: string
+  mandate_id?: string | null
+  
+  // Match scoring
+  match_score: MatchScore | MatchScoreBand
+  score_value: number // 0-100
+  
+  // Analysis
   match_reasons: string[]
+  blockers: string[]
   
-  // Status
+  // Status and priority
   status: MatchStatus
-  
-  // Recommended Action
-  recommended_action: string
   priority: 'low' | 'medium' | 'high' | 'urgent'
+  
+  // Recommended action
+  recommended_action: string
   
   // Notes
   notes: string | null
@@ -213,7 +224,7 @@ export interface FinanceProfile {
 // ACTIVITY LAYER
 // ----------------------------------------
 
-export type ActivityType = 'call' | 'email' | 'whatsapp' | 'meeting' | 'note' | 'mandate' | 'lead' | 'buyer' | 'match' | 'finance'
+export type ActivityType = 'call' | 'email' | 'whatsapp' | 'meeting' | 'note' | 'follow_up' | 'mandate' | 'lead' | 'buyer' | 'match' | 'finance'
 
 export interface Activity {
   id: string
@@ -241,12 +252,21 @@ export interface Mandate {
   id: string
   lead_id: string
   created_at: string
+  updated_at: string
   agency_name: string
   exclusive: boolean
   signing_mode: SigningMode
   status: MandateStatus
   signed_at: string | null
   notes: string | null
+  // Property details for continuity
+  title: string | null
+  asking_price: number | null
+  city: string | null
+  neighborhood: string | null
+  property_type: string | null
+  area_m2: number | null
+  bedrooms: number | null
 }
 
 // ----------------------------------------
@@ -290,38 +310,38 @@ export interface Database {
     Tables: {
       leads: {
         Row: Lead
-        Insert: Omit<Lead, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string; updated_at?: string }
-        Update: Partial<Omit<Lead, 'id' | 'created_at'>>
+        Insert: any
+        Update: any
       }
       buyers: {
         Row: Buyer
-        Insert: Omit<Buyer, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string; updated_at?: string }
-        Update: Partial<Omit<Buyer, 'id' | 'created_at'>>
+        Insert: any
+        Update: any
       }
       match_opportunities: {
         Row: MatchOpportunity
-        Insert: Omit<MatchOpportunity, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string; updated_at?: string }
-        Update: Partial<Omit<MatchOpportunity, 'id' | 'created_at'>>
+        Insert: any
+        Update: any
       }
       finance_profiles: {
         Row: FinanceProfile
-        Insert: Omit<FinanceProfile, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string; updated_at?: string }
-        Update: Partial<Omit<FinanceProfile, 'id' | 'created_at'>>
+        Insert: any
+        Update: any
       }
       activities: {
         Row: Activity
-        Insert: Omit<Activity, 'id' | 'created_at'> & { id?: string; created_at?: string }
-        Update: Partial<Omit<Activity, 'id' | 'created_at'>>
+        Insert: any
+        Update: any
       }
       ai_outputs: {
         Row: AIOutput
-        Insert: Omit<AIOutput, 'id' | 'created_at'> & { id?: string; created_at?: string }
-        Update: Partial<Omit<AIOutput, 'id' | 'created_at'>>
+        Insert: any
+        Update: any
       }
       mandates: {
         Row: Mandate
-        Insert: Omit<Mandate, 'id' | 'created_at'> & { id?: string; created_at?: string }
-        Update: Partial<Omit<Mandate, 'id' | 'created_at'>>
+        Insert: any
+        Update: any
       }
     }
   }

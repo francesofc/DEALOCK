@@ -1,7 +1,8 @@
-import { Buyer, BuyerStatus, BuyerType, ReadinessLevel, SeriousnessLevel, LanguagePreference } from '@/types/database'
+import { Buyer, BuyerStatus } from '@/types/database'
+import { createClient } from '@/lib/supabase/client'
 
 // Mock buyers data for Dealock buyer qualification layer
-export const mockBuyers: Buyer[] = [
+const mockBuyers: Buyer[] = [
   {
     id: 'buyer-1',
     created_at: '2026-01-15T10:30:00Z',
@@ -172,22 +173,174 @@ export const mockBuyers: Buyer[] = [
   },
 ]
 
+// Check if Supabase is configured
+const isSupabaseConfigured = () => {
+  return !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)
+}
+
 export async function getBuyers(): Promise<Buyer[]> {
-  // PHASE 2: Return mock data
-  // Future: Connect to Supabase
-  return mockBuyers
+  if (!isSupabaseConfigured()) {
+    return [...mockBuyers]
+  }
+
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('buyers')
+    .select('*')
+    .order('created_at', { ascending: false })
+  
+  if (error) {
+    console.error('Error fetching buyers:', error)
+    return [...mockBuyers]
+  }
+  
+  // If no data in Supabase yet, return mock data
+  if (!data || data.length === 0) {
+    return [...mockBuyers]
+  }
+  
+  return data as Buyer[]
 }
 
 export async function getBuyerById(id: string): Promise<Buyer | null> {
-  return mockBuyers.find(b => b.id === id) || null
+  if (!isSupabaseConfigured()) {
+    return mockBuyers.find(b => b.id === id) || null
+  }
+
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('buyers')
+    .select('*')
+    .eq('id', id)
+    .single()
+  
+  if (error) {
+    // If not found in Supabase, check mock data
+    return mockBuyers.find(b => b.id === id) || null
+  }
+  
+  return data as Buyer
+}
+
+export async function createBuyer(buyer: Buyer): Promise<void> {
+  if (!isSupabaseConfigured()) {
+    console.warn('Supabase not configured, buyer created in memory only')
+    return Promise.resolve()
+  }
+
+  const supabase = createClient()
+  const insertData = {
+    id: buyer.id,
+    name: buyer.name,
+    email: buyer.email,
+    phone: buyer.phone,
+    status: buyer.status,
+    buyer_type: buyer.buyer_type,
+    target_areas: buyer.target_areas,
+    property_types: buyer.property_types,
+    budget_min: buyer.budget_min,
+    budget_max: buyer.budget_max,
+    min_bedrooms: buyer.min_bedrooms,
+    min_area_m2: buyer.min_area_m2,
+    timeline: buyer.timeline,
+    seriousness: buyer.seriousness,
+    pre_approved: buyer.pre_approved,
+    cash_buyer: buyer.cash_buyer,
+    next_action: buyer.next_action,
+    next_action_date: buyer.next_action_date,
+    notes: buyer.notes,
+    language_preference: buyer.language_preference,
+  }
+  const { error } = await (supabase as any)
+    .from('buyers')
+    .insert(insertData)
+  
+  if (error) {
+    console.error('Error creating buyer:', error)
+    throw error
+  }
+}
+
+export async function updateBuyer(buyer: Buyer): Promise<void> {
+  if (!isSupabaseConfigured()) {
+    console.warn('Supabase not configured, buyer updated in memory only')
+    return Promise.resolve()
+  }
+
+  const supabase = createClient()
+  const updateData = {
+    name: buyer.name,
+    email: buyer.email,
+    phone: buyer.phone,
+    status: buyer.status,
+    buyer_type: buyer.buyer_type,
+    target_areas: buyer.target_areas,
+    property_types: buyer.property_types,
+    budget_min: buyer.budget_min,
+    budget_max: buyer.budget_max,
+    min_bedrooms: buyer.min_bedrooms,
+    min_area_m2: buyer.min_area_m2,
+    timeline: buyer.timeline,
+    seriousness: buyer.seriousness,
+    pre_approved: buyer.pre_approved,
+    cash_buyer: buyer.cash_buyer,
+    next_action: buyer.next_action,
+    next_action_date: buyer.next_action_date,
+    notes: buyer.notes,
+    language_preference: buyer.language_preference,
+    updated_at: new Date().toISOString(),
+  }
+  const { error } = await (supabase as any)
+    .from('buyers')
+    .update(updateData)
+    .eq('id', buyer.id)
+  
+  if (error) {
+    console.error('Error updating buyer:', error)
+    throw error
+  }
 }
 
 export async function getBuyersByStatus(status: BuyerStatus): Promise<Buyer[]> {
-  return mockBuyers.filter(b => b.status === status)
+  if (!isSupabaseConfigured()) {
+    return mockBuyers.filter(b => b.status === status)
+  }
+
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('buyers')
+    .select('*')
+    .eq('status', status)
+    .order('created_at', { ascending: false })
+  
+  if (error) {
+    console.error('Error fetching buyers by status:', error)
+    return mockBuyers.filter(b => b.status === status)
+  }
+  
+  return (data || []) as Buyer[]
 }
 
 export async function getHighPriorityBuyers(): Promise<Buyer[]> {
-  return mockBuyers.filter(b => 
-    b.seriousness === 'high' || b.seriousness === 'very_high'
-  )
+  if (!isSupabaseConfigured()) {
+    return mockBuyers.filter(b => 
+      b.seriousness === 'high' || b.seriousness === 'very_high'
+    )
+  }
+
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('buyers')
+    .select('*')
+    .in('seriousness', ['high', 'very_high'])
+    .order('created_at', { ascending: false })
+  
+  if (error) {
+    console.error('Error fetching high priority buyers:', error)
+    return mockBuyers.filter(b => 
+      b.seriousness === 'high' || b.seriousness === 'very_high'
+    )
+  }
+  
+  return (data || []) as Buyer[]
 }

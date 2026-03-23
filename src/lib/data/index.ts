@@ -1,11 +1,8 @@
 // Data service exports
-// PHASE 2: Using typed mock data
-// These services will be switched to Supabase in a future phase
+// PHASE 3: Supabase persistence enabled (with mock fallback)
 
 export * from './leads'
 export * from './buyers'
-export * from './matches'
-export * from './finance'
 export * from './matches'
 export * from './finance'
 export * from './activities'

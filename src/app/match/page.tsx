@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { EditDrawer } from "@/components/ui/EditDrawer";
+import { MatchCreatePanel } from "@/components/matches/MatchCreatePanel";
 import { 
   Plus, 
   Target,
@@ -21,7 +23,8 @@ import {
   UserPlus,
   Home
 } from "lucide-react";
-import { getMatches, getBuyers, getLeads, getMandates, getFinanceProfileByBuyer } from "@/lib/data";
+import { getMatches, getBuyers, getLeads, getMandates, getFinanceProfileByBuyer, createMatch } from "@/lib/data";
+import { getMatchNextAction, urgencyColor, UrgencyLevel } from "@/lib/intelligence/next-actions";
 import { MatchOpportunity, Buyer, Lead, Mandate, MatchScore, FinanceProfile } from "@/types/database";
 
 // ============================================
@@ -160,14 +163,34 @@ interface MatchCardProps {
 
 function MatchCard({ match, buyers, sellers, mandates, financeMap }: MatchCardProps) {
   const buyer = buyers[match.buyer_id];
-  const seller = sellers[match.seller_id];
-  const mandate = match.mandate_id ? mandates[match.mandate_id] : null;
+  
+  // Support both new schema (target_type/target_id) and legacy (seller_id/mandate_id)
+  let seller = null;
+  let mandate = null;
+  
+  if (match.target_type === 'seller') {
+    seller = sellers[match.target_id];
+  } else if (match.target_type === 'mandate') {
+    mandate = mandates[match.target_id];
+    // Try to get seller from mandate's lead_id
+    if (mandate) {
+      seller = sellers[mandate.lead_id];
+    }
+  } else {
+    // Legacy fallback
+    seller = match.seller_id ? sellers[match.seller_id] : null;
+    mandate = match.mandate_id ? mandates[match.mandate_id] : null;
+  }
+  
   const finance = financeMap[match.buyer_id];
   
   // Defensive: Don't render if core data is missing
   if (!buyer || !seller) {
     return null;
   }
+  
+  // Get next action intelligence
+  const nextAction = getMatchNextAction(match, finance || null);
   
   const factors = analyzeMatchFactors(buyer, seller, finance);
   const score = scoreMap[match.match_score];
@@ -230,7 +253,7 @@ function MatchCard({ match, buyers, sellers, mandates, financeMap }: MatchCardPr
         {/* Score */}
         <div className="text-right">
           <div className={`text-2xl font-semibold ${score.color}`}>
-            {match.match_score_value}%
+            {match.score_value}%
           </div>
           <p className={`text-xs ${score.color} opacity-70`}>{score.label} Fit</p>
         </div>
@@ -257,12 +280,36 @@ function MatchCard({ match, buyers, sellers, mandates, financeMap }: MatchCardPr
         </div>
       )}
       
+      {/* NEXT ACTION INTELLIGENCE */}
+      <div className={`p-3 rounded-xl border mb-4 ${urgencyColor(nextAction.urgency)}`}>
+        <div className="flex items-center gap-2 mb-1">
+          <span className={`px-2 py-0.5 rounded text-xs font-medium uppercase ${
+            nextAction.urgency === 'critical' ? 'bg-red-500 text-white' :
+            nextAction.urgency === 'high' ? 'bg-amber-500 text-black' :
+            nextAction.urgency === 'normal' ? 'bg-blue-500 text-white' :
+            'bg-white/20 text-white'
+          }`}>
+            {nextAction.urgency}
+          </span>
+          <span className="text-sm font-medium">{nextAction.action}</span>
+        </div>
+        <p className="text-xs text-white/60">{nextAction.reason}</p>
+        {nextAction.suggested && (
+          <p className="text-xs text-white/40 mt-1">{nextAction.suggested}</p>
+        )}
+      </div>
+      
       {/* ACTION BAR */}
       <div className="flex items-center justify-between pt-4 border-t border-white/[0.06]">
         <div className="flex items-center gap-2">
           <Badge variant="outline" className={priority.className}>
             {priority.label}
           </Badge>
+          {finance?.status && finance.status !== 'ready_to_progress' && finance.status !== 'strong_buyer' && (
+            <Badge className="bg-amber-500/20 text-amber-400 border-0 text-[10px]">
+              Finance: {finance.status.replace(/_/g, ' ')}
+            </Badge>
+          )}
           {mandate?.exclusive && (
             <Badge className="bg-emerald-500/20 text-emerald-400 border-0 text-[10px]">
               Exclusive Mandate
@@ -276,10 +323,9 @@ function MatchCard({ match, buyers, sellers, mandates, financeMap }: MatchCardPr
         </div>
         
         <div className="flex items-center gap-3">
-          <span className="text-sm text-white/50">{match.recommended_action}</span>
           <Button size="sm" className="gap-1.5 bg-white text-black hover:bg-white/90">
             <Zap className="w-3.5 h-3.5" />
-            Action
+            {match.status === 'identified' ? 'Contact Buyer' : 'Follow Up'}
           </Button>
         </div>
       </div>
@@ -315,6 +361,11 @@ export default function MatchPage() {
   const [financeMap, setFinanceMap] = useState<Record<string, FinanceProfile | null | undefined>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Create Match Drawer State
+  const [isCreateDrawerOpen, setIsCreateDrawerOpen] = useState(false);
+  const [newMatchData, setNewMatchData] = useState<Partial<MatchOpportunity>>({});
+  const [isCreating, setIsCreating] = useState(false);
 
   useEffect(() => {
     async function loadData() {
@@ -371,8 +422,22 @@ export default function MatchPage() {
     );
   }
 
-  // Filter valid matches (those with existing buyer and seller)
-  const validMatches = matches.filter(m => buyers[m.buyer_id] && sellers[m.seller_id]);
+  // Filter valid matches (those with existing buyer and valid target)
+  const validMatches = matches.filter(m => {
+    const buyer = buyers[m.buyer_id];
+    if (!buyer) return false;
+    
+    // Support new schema (target_type/target_id) and legacy (seller_id)
+    if (m.target_type === 'seller') {
+      return !!sellers[m.target_id];
+    } else if (m.target_type === 'mandate') {
+      const mandate = mandates[m.target_id];
+      return mandate && !!sellers[mandate.lead_id];
+    } else {
+      // Legacy fallback
+      return !!sellers[m.seller_id || ''];
+    }
+  });
   
   // Categorize matches by score
   const excellentMatches = validMatches.filter(m => m.match_score === 'excellent' && m.status !== 'archived');
@@ -396,7 +461,10 @@ export default function MatchPage() {
             }
           </p>
         </div>
-        <Button className="gap-2 bg-white text-black hover:bg-white/90">
+        <Button 
+          className="gap-2 bg-white text-black hover:bg-white/90"
+          onClick={() => setIsCreateDrawerOpen(true)}
+        >
           <Plus className="w-4 h-4" />
           Create Match
         </Button>
@@ -517,14 +585,25 @@ export default function MatchPage() {
               <div className="space-y-2">
                 {weakMatches.slice(0, 3).map(match => {
                   const buyer = buyers[match.buyer_id];
-                  const seller = sellers[match.seller_id];
-                  if (!buyer || !seller) return null;
+                  if (!buyer) return null;
+                  
+                  // Support new schema and legacy
+                  let seller = null;
+                  if (match.target_type === 'seller') {
+                    seller = sellers[match.target_id];
+                  } else if (match.target_type === 'mandate') {
+                    const mandate = mandates[match.target_id];
+                    seller = mandate ? sellers[mandate.lead_id] : null;
+                  } else {
+                    seller = match.seller_id ? sellers[match.seller_id] : null;
+                  }
+                  if (!seller) return null;
                   return (
                     <div key={match.id} className="flex items-center gap-4 p-4 rounded-xl bg-white/[0.02] border border-white/[0.04]">
                       <span className="text-white/50">{buyer.name}</span>
                       <ArrowRight className="w-3 h-3 text-white/20" />
                       <span className="text-white/50">{seller.neighborhood}</span>
-                      <span className="ml-auto text-sm text-white/30">{match.match_score_value}%</span>
+                      <span className="ml-auto text-sm text-white/30">{match.score_value}%</span>
                     </div>
                   );
                 })}
@@ -546,7 +625,10 @@ export default function MatchPage() {
               The match engine analyzes budget, location, timeline, and readiness.
             </p>
             <div className="flex items-center justify-center gap-3">
-              <Button className="gap-2 bg-white text-black hover:bg-white/90">
+              <Button 
+                className="gap-2 bg-white text-black hover:bg-white/90"
+                onClick={() => setIsCreateDrawerOpen(true)}
+              >
                 <Plus className="w-4 h-4" />
                 Create First Match
               </Button>
@@ -577,6 +659,55 @@ export default function MatchPage() {
           </div>
         </div>
       )}
+
+      {/* CREATE MATCH DRAWER */}
+      <EditDrawer
+        isOpen={isCreateDrawerOpen}
+        onClose={() => {
+          setIsCreateDrawerOpen(false);
+          setNewMatchData({});
+        }}
+        title="Create Match Opportunity"
+        subtitle="Connect a buyer with a property opportunity"
+        onSave={async () => {
+          if (!newMatchData.buyer_id || !newMatchData.target_id) {
+            return;
+          }
+          setIsCreating(true);
+          try {
+            const match: MatchOpportunity = {
+              id: crypto.randomUUID(),
+              buyer_id: newMatchData.buyer_id,
+              target_type: newMatchData.target_type || 'mandate',
+              target_id: newMatchData.target_id,
+              match_score: newMatchData.match_score || 'good',
+              score_value: newMatchData.score_value || 75,
+              match_reasons: newMatchData.match_reasons || [],
+              blockers: newMatchData.blockers || [],
+              recommended_action: newMatchData.recommended_action || '',
+              status: 'identified',
+              priority: newMatchData.priority || 'medium',
+              notes: newMatchData.notes || '',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            };
+            await createMatch(match);
+            // Refresh matches
+            const matchesData = await getMatches();
+            setMatches(matchesData);
+            setIsCreateDrawerOpen(false);
+            setNewMatchData({});
+          } catch (err) {
+            console.error('Failed to create match:', err);
+          } finally {
+            setIsCreating(false);
+          }
+        }}
+        isSaving={isCreating}
+        saveLabel="Create Match"
+      >
+        <MatchCreatePanel onChange={setNewMatchData} />
+      </EditDrawer>
     </div>
   );
 }

@@ -1,10 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Input } from "@/components/ui/Input";
+import { EditDrawer } from "@/components/ui/EditDrawer";
+import { SellerCreatePanel } from "@/components/sellers/SellerCreatePanel";
 import { 
   Plus, 
   Search, 
@@ -22,9 +24,9 @@ import {
   ArrowRight,
   MapPin
 } from "lucide-react";
-import { getLeads } from "@/lib/data";
+import { getLeads, createLead, getMandates, updateLead } from "@/lib/data";
 import { getLeadIntelligence } from "@/lib/intelligence/mock-intelligence";
-import { Lead, LeadStatus } from "@/types/database";
+import { Lead, LeadStatus, Mandate, MandateStatus } from "@/types/database";
 import { SellerIntelligence } from "@/types/seller-intelligence";
 import { useTranslation } from "@/lib/i18n";
 
@@ -48,6 +50,27 @@ const statusMap: Record<LeadStatus, {
   lost: { label: "Lost", className: "bg-red-500/15 text-red-400", stage: 'lost' },
 };
 
+// Mandate status override map for display purposes
+const mandateDisplayMap: Record<MandateStatus, { status: LeadStatus; label: string; className: string }> = {
+  draft: { status: 'mandate_proposed', label: 'Near Mandate', className: 'bg-orange-500/15 text-orange-400' },
+  sent: { status: 'mandate_sent', label: 'Pending', className: 'bg-cyan-500/15 text-cyan-400' },
+  signed: { status: 'mandate_signed', label: 'Signed', className: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' },
+  expired: { status: 'mandate_proposed', label: 'Expired', className: 'bg-red-500/15 text-red-400' },
+  terminated: { status: 'mandate_proposed', label: 'Ended', className: 'bg-white/[0.06] text-white/40' },
+};
+
+// Compute display status based on mandate priority
+function getDisplayStatus(lead: Lead, mandate: Mandate | undefined): { status: LeadStatus; label: string; className: string } {
+  if (mandate) {
+    return mandateDisplayMap[mandate.status];
+  }
+  return {
+    status: lead.status,
+    label: statusMap[lead.status].label,
+    className: statusMap[lead.status].className
+  };
+}
+
 // ============================================
 // URGENCY CALCULATION
 // ============================================
@@ -64,7 +87,9 @@ interface UrgencyInfo {
   reason: string;
 }
 
-function getUrgency(lead: Lead, intel: SellerIntelligence | undefined): UrgencyInfo {
+function getUrgency(lead: Lead, mandate: Mandate | undefined, intel: SellerIntelligence | undefined): UrgencyInfo {
+  const displayStatus = getDisplayStatus(lead, mandate).status;
+  
   if (!intel) {
     return {
       level: 'low',
@@ -78,7 +103,7 @@ function getUrgency(lead: Lead, intel: SellerIntelligence | undefined): UrgencyI
   }
   
   // Critical: mandate in closing stage with high readiness
-  if (['mandate_proposed', 'mandate_sent'].includes(lead.status) && intel.mandate_readiness_score > 70) {
+  if (['mandate_proposed', 'mandate_sent'].includes(displayStatus) && intel.mandate_readiness_score > 70) {
     return {
       level: 'critical',
       label: 'Closing',
@@ -91,7 +116,7 @@ function getUrgency(lead: Lead, intel: SellerIntelligence | undefined): UrgencyI
   }
   
   // High: near-mandate with good engagement
-  if (['replied', 'call_scheduled'].includes(lead.status) && intel.mandate_readiness_score > 60) {
+  if (['replied', 'call_scheduled'].includes(displayStatus) && intel.mandate_readiness_score > 60) {
     return {
       level: 'high',
       label: 'Near Mandate',
@@ -104,7 +129,7 @@ function getUrgency(lead: Lead, intel: SellerIntelligence | undefined): UrgencyI
   }
   
   // High: high priority score
-  if ((lead.priority_score || 0) > 0.8 && lead.status !== 'mandate_signed') {
+  if ((lead.priority_score || 0) > 0.8 && displayStatus !== 'mandate_signed') {
     return {
       level: 'high',
       label: 'High Value',
@@ -116,8 +141,21 @@ function getUrgency(lead: Lead, intel: SellerIntelligence | undefined): UrgencyI
     };
   }
   
+  // Signed mandates: show as closed/success
+  if (displayStatus === 'mandate_signed') {
+    return {
+      level: 'low',
+      label: 'Signed',
+      icon: FileSignature,
+      color: 'text-emerald-400',
+      bg: 'bg-emerald-500/10',
+      border: 'border-l-2 border-l-emerald-400',
+      reason: 'Exclusivity secured'
+    };
+  }
+  
   // Normal: engaged but earlier stage
-  if (['contacted', 'replied', 'call_scheduled'].includes(lead.status)) {
+  if (['contacted', 'replied', 'call_scheduled'].includes(displayStatus)) {
     return {
       level: 'normal',
       label: 'Developing',
@@ -180,24 +218,67 @@ export default function SellersPage() {
   const router = useRouter();
   const { t } = useTranslation();
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [mandates, setMandates] = useState<Record<string, Mandate>>({});
   const [intelligence, setIntelligence] = useState<Record<string, SellerIntelligence>>({});
   const [loading, setLoading] = useState(true);
+  
+  // Create drawer state
+  const [isCreateDrawerOpen, setIsCreateDrawerOpen] = useState(false);
+  const [newLeadData, setNewLeadData] = useState<Partial<Lead>>({});
+  const [isCreating, setIsCreating] = useState(false);
 
-  useEffect(() => {
-    async function loadLeads() {
-      const data = await getLeads();
-      setLeads(data);
+  // Load data function - extracted for reuse
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true);
+      // Load both leads and mandates
+      const [leadsData, mandatesData] = await Promise.all([
+        getLeads(),
+        getMandates(),
+      ]);
+      
+      setLeads(leadsData);
+      
+      // Build mandateByLeadId map
+      const mandateMap: Record<string, Mandate> = {};
+      for (const mandate of mandatesData) {
+        mandateMap[mandate.lead_id] = mandate;
+      }
+      setMandates(mandateMap);
       
       const intelMap: Record<string, SellerIntelligence> = {};
-      for (const lead of data) {
-        const intel = await getLeadIntelligence(lead.id, lead);
-        intelMap[lead.id] = intel;
+      for (const lead of leadsData) {
+        try {
+          const intel = await getLeadIntelligence(lead.id, lead);
+          intelMap[lead.id] = intel;
+        } catch (intelErr) {
+          console.error(`Error loading intelligence for lead ${lead.id}:`, intelErr);
+        }
       }
       setIntelligence(intelMap);
+    } catch (err) {
+      console.error('Error loading leads:', err);
+    } finally {
       setLoading(false);
     }
-    loadLeads();
   }, []);
+
+  // Initial load
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Refresh when page becomes visible (after navigating from Seller Detail)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('Sellers page visible, refreshing data...');
+        loadData();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [loadData]);
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('en-EU', {
@@ -207,41 +288,90 @@ export default function SellersPage() {
     }).format(price);
   };
 
-  // Calculate stats
+  // Calculate stats using display status (respecting mandates)
   const stats = {
     total: leads.length,
     critical: leads.filter(l => {
+      const mandate = mandates[l.id];
+      const displayStatus = getDisplayStatus(l, mandate).status;
       const intel = intelligence[l.id];
-      return ['mandate_proposed', 'mandate_sent'].includes(l.status) && (intel?.mandate_readiness_score || 0) > 70;
+      return ['mandate_proposed', 'mandate_sent'].includes(displayStatus) && (intel?.mandate_readiness_score || 0) > 70;
     }).length,
     nearMandate: leads.filter(l => {
+      const mandate = mandates[l.id];
+      const displayStatus = getDisplayStatus(l, mandate).status;
       const intel = intelligence[l.id];
-      return ['replied', 'call_scheduled'].includes(l.status) && (intel?.mandate_readiness_score || 0) > 60;
+      return ['replied', 'call_scheduled'].includes(displayStatus) && (intel?.mandate_readiness_score || 0) > 60;
     }).length,
-    proposalOut: leads.filter(l => ['mandate_proposed', 'mandate_sent'].includes(l.status)).length,
-    signed: leads.filter(l => l.status === 'mandate_signed').length,
+    proposalOut: leads.filter(l => {
+      const mandate = mandates[l.id];
+      const displayStatus = getDisplayStatus(l, mandate).status;
+      return ['mandate_proposed', 'mandate_sent'].includes(displayStatus);
+    }).length,
+    signed: leads.filter(l => {
+      const mandate = mandates[l.id];
+      const displayStatus = getDisplayStatus(l, mandate).status;
+      return displayStatus === 'mandate_signed';
+    }).length,
   };
 
-  // Sort by urgency then readiness
+  // Sort by urgency then readiness, then by created_at (newest first)
   const sortedLeads = [...leads].sort((a, b) => {
-    const aIntel = intelligence[a.id];
-    const bIntel = intelligence[b.id];
-    const aUrgency = getUrgency(a, aIntel);
-    const bUrgency = getUrgency(b, bIntel);
+    const aMandate = mandates[a.id];
+    const bMandate = mandates[b.id];
+    const aDisplayStatus = getDisplayStatus(a, aMandate).status;
+    const bDisplayStatus = getDisplayStatus(b, bMandate).status;
     
-    const urgencyOrder: Record<UrgencyLevel, number> = { critical: 3, high: 2, normal: 1, low: 0 };
-    if (urgencyOrder[aUrgency.level] !== urgencyOrder[bUrgency.level]) {
-      return urgencyOrder[bUrgency.level] - urgencyOrder[aUrgency.level];
+    // Priority: signed mandates first, then sent, then draft, then by readiness
+    const statusPriority: Record<LeadStatus, number> = {
+      mandate_signed: 5,
+      mandate_sent: 4,
+      mandate_proposed: 3,
+      call_scheduled: 2,
+      replied: 1,
+      contacted: 0,
+      qualified: -1,
+      new: -2,
+      lost: -3,
+    };
+    
+    if (statusPriority[aDisplayStatus] !== statusPriority[bDisplayStatus]) {
+      return statusPriority[bDisplayStatus] - statusPriority[aDisplayStatus];
     }
     
-    return (bIntel?.mandate_readiness_score || 0) - (aIntel?.mandate_readiness_score || 0);
+    const aIntel = intelligence[a.id];
+    const bIntel = intelligence[b.id];
+    
+    // Then by readiness score
+    if ((bIntel?.mandate_readiness_score || 0) !== (aIntel?.mandate_readiness_score || 0)) {
+      return (bIntel?.mandate_readiness_score || 0) - (aIntel?.mandate_readiness_score || 0);
+    }
+    
+    // Finally by creation date (newest first)
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   });
 
-  // Group by urgency for visual separation
-  const criticalLeads = sortedLeads.filter(l => getUrgency(l, intelligence[l.id]).level === 'critical');
-  const highLeads = sortedLeads.filter(l => getUrgency(l, intelligence[l.id]).level === 'high');
-  const normalLeads = sortedLeads.filter(l => getUrgency(l, intelligence[l.id]).level === 'normal');
-  const lowLeads = sortedLeads.filter(l => getUrgency(l, intelligence[l.id]).level === 'low');
+  // Group by display status for visual separation
+  const criticalLeads = sortedLeads.filter(l => {
+    const mandate = mandates[l.id];
+    const intel = intelligence[l.id];
+    return getUrgency(l, mandate, intel).level === 'critical';
+  });
+  const highLeads = sortedLeads.filter(l => {
+    const mandate = mandates[l.id];
+    const intel = intelligence[l.id];
+    return getUrgency(l, mandate, intel).level === 'high';
+  });
+  const normalLeads = sortedLeads.filter(l => {
+    const mandate = mandates[l.id];
+    const intel = intelligence[l.id];
+    return getUrgency(l, mandate, intel).level === 'normal';
+  });
+  const lowLeads = sortedLeads.filter(l => {
+    const mandate = mandates[l.id];
+    const intel = intelligence[l.id];
+    return getUrgency(l, mandate, intel).level === 'low';
+  });
 
   if (loading) {
     return (
@@ -260,7 +390,10 @@ export default function SellersPage() {
           <h1 className="text-2xl font-semibold tracking-tight">{t.leads.title}</h1>
           <p className="text-white/40 mt-1">{t.leads.subtitle}</p>
         </div>
-        <Button className="gap-2 bg-white text-black hover:bg-white/90">
+        <Button 
+          className="gap-2 bg-white text-black hover:bg-white/90"
+          onClick={() => setIsCreateDrawerOpen(true)}
+        >
           <Plus className="w-4 h-4" />
           {t.common.create}
         </Button>
@@ -308,6 +441,7 @@ export default function SellersPage() {
                   key={lead.id} 
                   lead={lead} 
                   intel={intelligence[lead.id]}
+                  mandate={mandates[lead.id]}
                   onClick={() => router.push(`/sellers/${lead.id}`)}
                 />
               ))}
@@ -330,6 +464,7 @@ export default function SellersPage() {
                   key={lead.id} 
                   lead={lead} 
                   intel={intelligence[lead.id]}
+                  mandate={mandates[lead.id]}
                   onClick={() => router.push(`/sellers/${lead.id}`)}
                 />
               ))}
@@ -347,11 +482,12 @@ export default function SellersPage() {
               color="blue"
             />
             <div className="space-y-2">
-              {normalLeads.slice(0, 5).map(lead => (
+              {normalLeads.map(lead => (
                 <SellerRow 
                   key={lead.id} 
                   lead={lead} 
                   intel={intelligence[lead.id]}
+                  mandate={mandates[lead.id]}
                   onClick={() => router.push(`/sellers/${lead.id}`)}
                 />
               ))}
@@ -369,11 +505,12 @@ export default function SellersPage() {
               color="default"
             />
             <div className="space-y-2">
-              {lowLeads.slice(0, 3).map(lead => (
+              {lowLeads.map(lead => (
                 <SellerRow 
                   key={lead.id} 
                   lead={lead} 
                   intel={intelligence[lead.id]}
+                  mandate={mandates[lead.id]}
                   onClick={() => router.push(`/sellers/${lead.id}`)}
                 />
               ))}
@@ -390,12 +527,72 @@ export default function SellersPage() {
           </div>
           <h3 className="text-lg font-medium mb-2">No sellers yet</h3>
           <p className="text-white/40 text-sm mb-6">Start building your pipeline</p>
-          <Button className="gap-2 bg-white text-black hover:bg-white/90">
+          <Button 
+            className="gap-2 bg-white text-black hover:bg-white/90"
+            onClick={() => setIsCreateDrawerOpen(true)}
+          >
             <Plus className="w-4 h-4" />
             Add Your First Seller
           </Button>
         </div>
       )}
+
+      {/* CREATE DRAWER */}
+      <EditDrawer
+        isOpen={isCreateDrawerOpen}
+        onClose={() => setIsCreateDrawerOpen(false)}
+        title="Add New Seller"
+        subtitle="Create a new seller lead in your pipeline"
+        onSave={() => {
+          setIsCreating(true);
+          // Persist to Supabase (with localStorage fallback)
+          setTimeout(() => {
+            // Build the new lead with safe defaults - always create
+            const newLead: Lead = {
+              id: newLeadData.id || crypto.randomUUID(),
+              created_at: newLeadData.created_at || new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              status: (newLeadData.status as LeadStatus) || 'new',
+              seller_type: newLeadData.seller_type || 'owner',
+              whatsapp_status: 'not_sent',
+              language_preference: (newLeadData.language_preference as any) || 'en',
+              owner_name: newLeadData.owner_name?.trim() || 'New Seller',
+              phone: newLeadData.phone || '',
+              email: newLeadData.email || '',
+              property_type: newLeadData.property_type || 'apartment',
+              price: newLeadData.price || 0,
+              city: newLeadData.city || '',
+              neighborhood: newLeadData.neighborhood || '',
+              bedrooms: newLeadData.bedrooms || null,
+              area_m2: newLeadData.area_m2 || null,
+              seller_profile: newLeadData.seller_profile || null,
+              source: newLeadData.source || '',
+              notes: newLeadData.notes || null,
+              listing_url: null,
+              days_on_market_estimate: null,
+              asking_vs_market_delta: null,
+              photos_quality_score: null,
+              description_quality_score: null,
+              priority_score: null,
+            };
+            
+            // Persist to Supabase (with localStorage fallback)
+            createLead(newLead);
+            
+            // Update local state for immediate UI update
+            setLeads(prevLeads => [newLead, ...prevLeads]);
+            
+            // Reset form and close drawer
+            setIsCreating(false);
+            setIsCreateDrawerOpen(false);
+            setNewLeadData({});
+          }, 500);
+        }}
+        isSaving={isCreating}
+        saveLabel="Create Seller"
+      >
+        <SellerCreatePanel onChange={setNewLeadData} />
+      </EditDrawer>
     </div>
   );
 }
@@ -407,15 +604,17 @@ export default function SellersPage() {
 function SellerRow({ 
   lead, 
   intel, 
+  mandate,
   onClick 
 }: { 
   lead: Lead; 
   intel: SellerIntelligence | undefined;
+  mandate: Mandate | undefined;
   onClick: () => void;
 }) {
   const router = useRouter();
-  const status = statusMap[lead.status];
-  const urgency = getUrgency(lead, intel);
+  const displayStatus = getDisplayStatus(lead, mandate);
+  const urgency = getUrgency(lead, mandate, intel);
   const UrgencyIcon = urgency.icon;
   
   const formatPrice = (price: number) => {
@@ -441,8 +640,8 @@ function SellerRow({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <p className="font-medium truncate">{lead.owner_name}</p>
-            <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider ${status.className}`}>
-              {status.label}
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider ${displayStatus.className}`}>
+              {displayStatus.label}
             </span>
           </div>
           <div className="flex items-center gap-2 mt-1 text-sm text-white/40">

@@ -7,6 +7,8 @@ import { useTranslation } from "@/lib/i18n";
 import { Badge } from "@/components/ui/Badge";
 import { Input } from "@/components/ui/Input";
 import { Progress } from "@/components/ui/Progress";
+import { EditDrawer } from "@/components/ui/EditDrawer";
+import { BuyerCreatePanel } from "@/components/buyers/BuyerCreatePanel";
 import { 
   Plus, 
   Search, 
@@ -26,7 +28,7 @@ import {
   UserCircle,
   Flame
 } from "lucide-react";
-import { getBuyers, getFinanceProfileByBuyer } from "@/lib/data";
+import { getBuyers, getFinanceProfileByBuyer, createBuyer, saveFinanceProfile } from "@/lib/data";
 import { Buyer, BuyerStatus, FinanceProfile } from "@/types/database";
 
 // ============================================
@@ -155,18 +157,33 @@ export default function BuyersPage() {
   const [buyers, setBuyers] = useState<Buyer[]>([]);
   const [financeMap, setFinanceMap] = useState<Record<string, FinanceProfile | null | undefined>>({});
   const [loading, setLoading] = useState(true);
+  
+  // Create drawer state
+  const [isCreateDrawerOpen, setIsCreateDrawerOpen] = useState(false);
+  const [newBuyerData, setNewBuyerData] = useState<Partial<Buyer>>({});
+  const [newFinanceData, setNewFinanceData] = useState<Partial<FinanceProfile>>({});
+  const [isCreating, setIsCreating] = useState(false);
 
   useEffect(() => {
     async function loadBuyers() {
-      const data = await getBuyers();
-      setBuyers(data);
-      
-      const profiles: Record<string, FinanceProfile | null> = {};
-      for (const buyer of data) {
-        profiles[buyer.id] = await getFinanceProfileByBuyer(buyer.id);
+      try {
+        const data = await getBuyers();
+        setBuyers(data);
+        
+        const profiles: Record<string, FinanceProfile | null> = {};
+        for (const buyer of data) {
+          try {
+            profiles[buyer.id] = await getFinanceProfileByBuyer(buyer.id);
+          } catch (profileErr) {
+            console.error(`Error loading finance profile for buyer ${buyer.id}:`, profileErr);
+          }
+        }
+        setFinanceMap(profiles);
+      } catch (err) {
+        console.error('Error loading buyers:', err);
+      } finally {
+        setLoading(false);
       }
-      setFinanceMap(profiles);
-      setLoading(false);
     }
     loadBuyers();
   }, []);
@@ -197,11 +214,16 @@ export default function BuyersPage() {
     committed: buyers.filter(b => b.seriousness === 'high' || b.seriousness === 'very_high').length,
   };
 
-  // Sort buyers by priority
+  // Sort buyers by priority (highest first), then by created_at (newest first)
   const sortedBuyers = [...buyers].sort((a, b) => {
     const aPriority = getBuyerPriority(a, financeMap[a.id]);
     const bPriority = getBuyerPriority(b, financeMap[b.id]);
-    return bPriority.score - aPriority.score;
+    // First sort by priority level
+    if (bPriority.score !== aPriority.score) {
+      return bPriority.score - aPriority.score;
+    }
+    // Then by creation date (newest first)
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   });
 
   // Group by priority
@@ -227,7 +249,10 @@ export default function BuyersPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Buyers</h1>
           <p className="text-white/40 mt-1">Buyer qualification workspace</p>
         </div>
-        <Button className="gap-2 bg-white text-black hover:bg-white/90">
+        <Button 
+          className="gap-2 bg-white text-black hover:bg-white/90"
+          onClick={() => setIsCreateDrawerOpen(true)}
+        >
           <Plus className="w-4 h-4" />
           Add Buyer
         </Button>
@@ -289,7 +314,7 @@ export default function BuyersPage() {
           <section>
             <PriorityHeader icon={Target} title="Active" count={normalBuyers.length} color="blue" />
             <div className="space-y-2">
-              {normalBuyers.slice(0, 5).map(buyer => (
+              {normalBuyers.map(buyer => (
                 <BuyerRow key={buyer.id} buyer={buyer} finance={financeMap[buyer.id]} onClick={() => router.push(`/buyers/${buyer.id}`)} />
               ))}
             </div>
@@ -301,7 +326,7 @@ export default function BuyersPage() {
           <section className="opacity-60">
             <PriorityHeader icon={Clock} title="Nurture" count={lowBuyers.length} color="default" />
             <div className="space-y-2">
-              {lowBuyers.slice(0, 3).map(buyer => (
+              {lowBuyers.map(buyer => (
                 <BuyerRow key={buyer.id} buyer={buyer} finance={financeMap[buyer.id]} onClick={() => router.push(`/buyers/${buyer.id}`)} />
               ))}
             </div>
@@ -317,12 +342,101 @@ export default function BuyersPage() {
           </div>
           <h3 className="text-lg font-medium mb-2">No buyers yet</h3>
           <p className="text-white/40 text-sm mb-6">Start building your buyer network</p>
-          <Button className="gap-2 bg-white text-black hover:bg-white/90">
+          <Button 
+            className="gap-2 bg-white text-black hover:bg-white/90"
+            onClick={() => setIsCreateDrawerOpen(true)}
+          >
             <Plus className="w-4 h-4" />
             Add First Buyer
           </Button>
         </div>
       )}
+
+      {/* CREATE DRAWER */}
+      <EditDrawer
+        isOpen={isCreateDrawerOpen}
+        onClose={() => setIsCreateDrawerOpen(false)}
+        title="Add New Buyer"
+        subtitle="Create a new buyer in your network"
+        onSave={() => {
+          setIsCreating(true);
+          // Persist to Supabase (with localStorage fallback)
+          setTimeout(() => {
+            // Build the new buyer object from form data with safe defaults
+            const newBuyer: Buyer = {
+              id: newBuyerData.id || crypto.randomUUID(),
+              created_at: newBuyerData.created_at || new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              name: newBuyerData.name?.trim() || 'New Buyer',
+              phone: newBuyerData.phone || '',
+              email: newBuyerData.email || '',
+              status: (newBuyerData.status as BuyerStatus) || 'new',
+              buyer_type: newBuyerData.buyer_type || 'first_time',
+              timeline: newBuyerData.timeline || 'browsing',
+              seriousness: newBuyerData.seriousness || 'medium',
+              language_preference: (newBuyerData.language_preference as any) || 'en',
+              budget_min: newBuyerData.budget_min || 0,
+              budget_max: newBuyerData.budget_max || 0,
+              target_areas: newBuyerData.target_areas || [],
+              property_types: newBuyerData.property_types || [],
+              min_bedrooms: newBuyerData.min_bedrooms || null,
+              min_area_m2: (newBuyerData as any).min_area_m2 || null,
+              pre_approved: newBuyerData.pre_approved || false,
+              cash_buyer: newBuyerData.cash_buyer || false,
+              notes: newBuyerData.notes || null,
+              next_action: '',
+              next_action_date: null,
+            };
+            
+            // Persist buyer to Supabase (with localStorage fallback)
+            createBuyer(newBuyer);
+            
+            // Update local state for immediate UI update
+            setBuyers(prevBuyers => [newBuyer, ...prevBuyers]);
+            
+            // Also add finance profile if income or deposit was provided
+            if (newFinanceData && (newFinanceData.annual_income || newFinanceData.available_down_payment)) {
+              const financeProfile: FinanceProfile = {
+                id: newFinanceData.id || crypto.randomUUID(),
+                buyer_id: newBuyer.id,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                status: 'incomplete',
+                annual_income: newFinanceData.annual_income || null,
+                available_down_payment: newFinanceData.available_down_payment || null,
+                existing_debt_monthly: newFinanceData.existing_debt_monthly || null,
+                documents: [],
+                documents_complete: false,
+                estimated_max_budget: null,
+                estimated_monthly_payment: null,
+                affordability_status: null,
+                under_review_since: null,
+                reviewed_by: null,
+                review_notes: null,
+                missing_documents: [],
+                recommended_actions: [],
+                completion_percentage: 25,
+              };
+              // Persist finance profile to Supabase (with localStorage fallback)
+              saveFinanceProfile(financeProfile);
+              setFinanceMap(prev => ({ ...prev, [newBuyer.id]: financeProfile }));
+            }
+            
+            // Reset form and close drawer
+            setIsCreating(false);
+            setIsCreateDrawerOpen(false);
+            setNewBuyerData({});
+            setNewFinanceData({});
+          }, 500);
+        }}
+        isSaving={isCreating}
+        saveLabel="Create Buyer"
+      >
+        <BuyerCreatePanel 
+          onChange={setNewBuyerData} 
+          onFinanceChange={setNewFinanceData}
+        />
+      </EditDrawer>
     </div>
   );
 }

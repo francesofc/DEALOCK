@@ -24,7 +24,8 @@ import {
   AlertTriangle,
   Building2,
   ShieldCheck,
-  BarChart3
+  BarChart3,
+  CheckCircle
 } from "lucide-react";
 import { 
   getLeads, 
@@ -35,6 +36,16 @@ import {
   getFinanceProfiles 
 } from "@/lib/data";
 import { getLeadIntelligence } from "@/lib/intelligence/mock-intelligence";
+import { 
+  getSellerNextAction, 
+  getBuyerNextAction, 
+  getFinanceNextAction,
+  getMatchNextAction,
+  getDaysSinceLastActivity,
+  urgencyBadge,
+  urgencyColor,
+  UrgencyLevel
+} from "@/lib/intelligence/next-actions";
 import { 
   Lead, 
   Activity, 
@@ -53,6 +64,7 @@ const activityTypeMap: Record<ActivityType, { label: string }> = {
   whatsapp: { label: "WhatsApp" },
   meeting: { label: "Meeting" },
   note: { label: "Note" },
+  follow_up: { label: "Follow Up" },
   mandate: { label: "Mandate" },
   lead: { label: "Lead" },
   buyer: { label: "Buyer" },
@@ -249,6 +261,17 @@ export default function CommandCenterPage() {
         />
       </section>
 
+      {/* ACTION PRIORITIES - Using Next Action Rules */}
+      <ActionPrioritiesSection 
+        leads={leads}
+        buyers={buyers}
+        matches={matches}
+        financeProfiles={financeProfiles}
+        activities={activities}
+        mandates={mandates}
+        intelligence={intelligence}
+      />
+
       {/* URGENT NOW */}
       {urgentNow.length > 0 && (
         <section>
@@ -284,7 +307,7 @@ export default function CommandCenterPage() {
                     key={match.id}
                     icon={Puzzle}
                     iconColor="violet"
-                    title={`Match Opportunity · ${match.match_score_value}% Fit`}
+                    title={`Match Opportunity · ${match.score_value}% Fit`}
                     subtitle={match.recommended_action}
                     action={t.command_center.labels.contact_buyer}
                     badge={{ text: t.command_center.labels.urgent, color: "red" }}
@@ -381,7 +404,7 @@ export default function CommandCenterPage() {
                       </p>
                     </div>
                     <Badge className="bg-violet-500/20 text-violet-400 border-0">
-                      {match.match_score_value}%
+                      {match.score_value}%
                     </Badge>
                   </div>
                 </CompactCard>
@@ -521,6 +544,232 @@ export default function CommandCenterPage() {
           ))}
         </div>
       </section>
+    </div>
+  );
+}
+
+// ============================================
+// ACTION PRIORITIES SECTION
+// ============================================
+
+function ActionPrioritiesSection({
+  leads,
+  buyers,
+  matches,
+  financeProfiles,
+  activities,
+  mandates,
+  intelligence,
+}: {
+  leads: Lead[];
+  buyers: Buyer[];
+  matches: MatchOpportunity[];
+  financeProfiles: FinanceProfile[];
+  activities: Activity[];
+  mandates: Mandate[];
+  intelligence: Record<string, SellerIntelligence>;
+}) {
+  const router = useRouter();
+  
+  // Calculate action priorities using rule helpers
+  const sellerActions = leads
+    .map(lead => {
+      const leadActivities = activities.filter(a => a.lead_id === lead.id);
+      const mandate = mandates.find(m => m.lead_id === lead.id);
+      const nextAction = getSellerNextAction(lead, leadActivities, mandate || null, intelligence[lead.id]?.mandate_readiness_score);
+      return { type: 'seller' as const, entity: lead, nextAction };
+    })
+    .filter(item => item.nextAction.urgency === 'critical' || item.nextAction.urgency === 'high')
+    .slice(0, 3);
+  
+  const buyerActions = buyers
+    .map(buyer => {
+      const buyerActivities = activities.filter(a => a.buyer_id === buyer.id);
+      const finance = financeProfiles.find(f => f.buyer_id === buyer.id);
+      const buyerMatches = matches.filter(m => m.buyer_id === buyer.id);
+      const nextAction = getBuyerNextAction(buyer, finance || null, buyerActivities, buyerMatches);
+      return { type: 'buyer' as const, entity: buyer, nextAction, finance };
+    })
+    .filter(item => item.nextAction.urgency === 'critical' || item.nextAction.urgency === 'high')
+    .slice(0, 3);
+  
+  const financeBlockers = financeProfiles
+    .filter(f => f.status === 'incomplete' || f.status === 'needs_clarification')
+    .map(f => {
+      const buyer = buyers.find(b => b.id === f.buyer_id);
+      const financeActivities = activities.filter(a => a.buyer_id === f.buyer_id);
+      const nextAction = getFinanceNextAction(f, financeActivities);
+      return { type: 'finance' as const, profile: f, buyer, nextAction };
+    })
+    .slice(0, 2);
+  
+  const readyMatches = matches
+    .filter(m => m.match_score === 'excellent' && m.status === 'identified')
+    .slice(0, 2);
+  
+  const allPriorities = [
+    ...sellerActions.map(s => ({ ...s, key: `seller-${s.entity.id}` })),
+    ...buyerActions.map(b => ({ ...b, key: `buyer-${b.entity.id}` })),
+    ...financeBlockers.map(f => ({ ...f, key: `finance-${f.profile.id}` })),
+  ].sort((a, b) => {
+    const urgencyOrder = { critical: 0, high: 1, normal: 2, low: 3 };
+    return urgencyOrder[a.nextAction.urgency] - urgencyOrder[b.nextAction.urgency];
+  });
+  
+  if (allPriorities.length === 0 && readyMatches.length === 0) {
+    return (
+      <section className="surface-elevated rounded-2xl p-6 border border-emerald-500/20 bg-emerald-500/5">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+            <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+          </div>
+          <div>
+            <h2 className="font-medium text-emerald-400">All caught up</h2>
+            <p className="text-sm text-white/50">No critical or high-priority actions pending</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+  
+  return (
+    <section>
+      <SectionHeader 
+        icon={Target}
+        iconColor="violet"
+        title="Action Priorities"
+        subtitle={`${allPriorities.length} items need attention`}
+      />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {allPriorities.map((item) => {
+          if (item.type === 'seller') {
+            const lead = item.entity as Lead;
+            return (
+              <ActionPriorityCard
+                key={item.key}
+                icon={Building2}
+                iconColor="orange"
+                title={lead.owner_name}
+                subtitle={`${lead.property_type} · ${lead.city}`}
+                action={item.nextAction.action}
+                urgency={item.nextAction.urgency}
+                reason={item.nextAction.reason}
+                onClick={() => router.push(`/sellers/${lead.id}`)}
+              />
+            );
+          }
+          if (item.type === 'buyer') {
+            const buyer = item.entity as Buyer;
+            return (
+              <ActionPriorityCard
+                key={item.key}
+                icon={Users}
+                iconColor="blue"
+                title={buyer.name}
+                subtitle={`Budget: ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(buyer.budget_max)}`}
+                action={item.nextAction.action}
+                urgency={item.nextAction.urgency}
+                reason={item.nextAction.reason}
+                onClick={() => router.push(`/buyers/${buyer.id}`)}
+              />
+            );
+          }
+          if (item.type === 'finance') {
+            const buyer = item.buyer;
+            if (!buyer) return null;
+            return (
+              <ActionPriorityCard
+                key={item.key}
+                icon={Wallet}
+                iconColor="amber"
+                title={buyer.name}
+                subtitle="Finance incomplete"
+                action={item.nextAction.action}
+                urgency={item.nextAction.urgency}
+                reason={item.nextAction.reason}
+                onClick={() => router.push('/finance')}
+              />
+            );
+          }
+          return null;
+        })}
+        
+        {readyMatches.map((match) => (
+          <ActionPriorityCard
+            key={`match-${match.id}`}
+            icon={Puzzle}
+            iconColor="violet"
+            title="Excellent Match Ready"
+            subtitle={match.recommended_action}
+            action="Send opportunity now"
+            urgency="high"
+            reason={`${match.score_value}% fit score - buyer should be contacted`}
+            onClick={() => router.push('/match')}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ActionPriorityCard({
+  icon: Icon,
+  iconColor,
+  title,
+  subtitle,
+  action,
+  urgency,
+  reason,
+  onClick,
+}: {
+  icon: React.ElementType;
+  iconColor: string;
+  title: string;
+  subtitle: string;
+  action: string;
+  urgency: UrgencyLevel;
+  reason: string;
+  onClick: () => void;
+}) {
+  const urgencyColors = {
+    critical: 'bg-red-500 text-white',
+    high: 'bg-amber-500 text-black',
+    normal: 'bg-blue-500 text-white',
+    low: 'bg-white/20 text-white',
+  };
+  
+  const iconBgColors: Record<string, string> = {
+    orange: 'bg-orange-500/10 text-orange-400',
+    blue: 'bg-blue-500/10 text-blue-400',
+    amber: 'bg-amber-500/10 text-amber-400',
+    violet: 'bg-violet-500/10 text-violet-400',
+    red: 'bg-red-500/10 text-red-400',
+    emerald: 'bg-emerald-500/10 text-emerald-400',
+  };
+  
+  return (
+    <div 
+      onClick={onClick}
+      className="surface-elevated rounded-xl p-4 border border-white/[0.06] hover:border-white/10 hover:bg-white/[0.02] transition-all cursor-pointer"
+    >
+      <div className="flex items-start gap-3">
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${iconBgColors[iconColor]}`}>
+          <Icon className="w-5 h-5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className={`px-2 py-0.5 rounded text-xs font-medium uppercase ${urgencyColors[urgency]}`}>
+              {urgency}
+            </span>
+          </div>
+          <h3 className="font-medium truncate">{title}</h3>
+          <p className="text-sm text-white/40 truncate">{subtitle}</p>
+          <div className="mt-2 pt-2 border-t border-white/[0.04]">
+            <p className="text-sm text-white/70">{action}</p>
+            <p className="text-xs text-white/40 mt-0.5">{reason}</p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

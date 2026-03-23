@@ -1,4 +1,4 @@
-// Seller Intelligence Types for MandateOS
+// Seller Intelligence Types for Dealock
 // Transitional layer - will integrate with AI backend in future phase
 
 export type SellerMindset = 

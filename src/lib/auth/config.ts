@@ -1,4 +1,4 @@
-// Auth configuration for MandateOS
+// Auth configuration for Dealock
 // PHASE 2: Scaffold for future auth implementation
 
 export const AUTH_CONFIG = {

@@ -1,4 +1,4 @@
-// Internationalization Types for MandateOS
+// Internationalization Types for Dealock
 // Supports: English, French, Portuguese, Spanish
 // Future-ready: Russian (planned)
 

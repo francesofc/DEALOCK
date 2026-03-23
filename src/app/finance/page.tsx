@@ -23,6 +23,7 @@ import {
   Users
 } from "lucide-react";
 import { getFinanceProfiles, getBuyers } from "@/lib/data";
+import { getFinanceNextAction, urgencyColor } from "@/lib/intelligence/next-actions";
 import { FinanceProfile, Buyer, FinanceStatus } from "@/types/database";
 
 // ============================================
@@ -274,6 +275,9 @@ function FinanceCard({ profile, buyer }: { profile: FinanceProfile; buyer: Buyer
   const ActionIcon = status.actionIcon;
   const affordability = profile.affordability_status ? affordabilityMap[profile.affordability_status] : null;
   
+  // Get next action intelligence
+  const nextAction = getFinanceNextAction(profile, []);
+  
   const formatCurrency = (amount: number | null) => {
     if (!amount) return "—";
     return new Intl.NumberFormat('en-US', {
@@ -336,8 +340,27 @@ function FinanceCard({ profile, buyer }: { profile: FinanceProfile; buyer: Buyer
         </div>
       </div>
       
+      {/* Next Action Intelligence */}
+      <div className={`p-3 rounded-xl border mb-4 ${urgencyColor(nextAction.urgency)}`}>
+        <div className="flex items-center gap-2 mb-1">
+          <span className={`px-2 py-0.5 rounded text-xs font-medium uppercase ${
+            nextAction.urgency === 'critical' ? 'bg-red-500 text-white' :
+            nextAction.urgency === 'high' ? 'bg-amber-500 text-black' :
+            nextAction.urgency === 'normal' ? 'bg-blue-500 text-white' :
+            'bg-white/20 text-white'
+          }`}>
+            {nextAction.urgency}
+          </span>
+          <span className="text-sm font-medium">{nextAction.action}</span>
+        </div>
+        <p className="text-xs text-white/60">{nextAction.reason}</p>
+        {nextAction.suggested && (
+          <p className="text-xs text-white/40 mt-1">{nextAction.suggested}</p>
+        )}
+      </div>
+      
       {/* Documents & Action */}
-      <div className="flex items-center justify-between mt-4">
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           {/* Progress */}
           <div className="flex items-center gap-3">

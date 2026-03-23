@@ -1,8 +1,12 @@
--- MandateOS Database Schema
+-- Dealock Database Schema
 -- Run this in your Supabase SQL Editor to create the tables
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- ============================================
+-- ENUMS
+-- ============================================
 
 -- Lead status enum
 CREATE TYPE lead_status AS ENUM (
@@ -38,7 +42,8 @@ CREATE TYPE seller_type AS ENUM (
 CREATE TYPE language_preference AS ENUM (
   'fr', 
   'pt', 
-  'en'
+  'en',
+  'es'
 );
 
 -- Activity type enum
@@ -49,7 +54,10 @@ CREATE TYPE activity_type AS ENUM (
   'meeting', 
   'note', 
   'mandate', 
-  'lead'
+  'lead',
+  'buyer',
+  'match',
+  'finance'
 );
 
 -- Mandate status enum
@@ -68,20 +76,95 @@ CREATE TYPE signing_mode AS ENUM (
   'remote'
 );
 
--- Leads table
+-- Buyer status enum
+CREATE TYPE buyer_status AS ENUM (
+  'new',
+  'contacted',
+  'qualified',
+  'viewing_scheduled',
+  'offer_pending',
+  'closed',
+  'inactive'
+);
+
+-- Buyer type enum
+CREATE TYPE buyer_type AS ENUM (
+  'first_time',
+  'investor',
+  'relocating',
+  'upgrading',
+  'downsizing'
+);
+
+-- Readiness level enum
+CREATE TYPE readiness_level AS ENUM (
+  'browsing',
+  '3_months',
+  '1_month',
+  'immediate'
+);
+
+-- Seriousness level enum
+CREATE TYPE seriousness_level AS ENUM (
+  'low',
+  'medium',
+  'high',
+  'very_high'
+);
+
+-- Finance status enum
+CREATE TYPE finance_status AS ENUM (
+  'incomplete',
+  'under_review',
+  'needs_clarification',
+  'ready_to_progress',
+  'strong_buyer'
+);
+
+-- Match status enum
+CREATE TYPE match_status AS ENUM (
+  'identified',
+  'contacted_buyer',
+  'viewing_scheduled',
+  'offer_received',
+  'negotiating',
+  'closed',
+  'archived'
+);
+
+-- Match score band enum
+CREATE TYPE match_score_band AS ENUM (
+  'excellent',
+  'good',
+  'fair',
+  'weak'
+);
+
+-- Target type enum (for match opportunities)
+CREATE TYPE target_type AS ENUM (
+  'mandate',
+  'seller'
+);
+
+-- ============================================
+-- TABLES
+-- ============================================
+
+-- Leads table (Sellers)
 CREATE TABLE leads (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   owner_name TEXT NOT NULL,
+  email TEXT NOT NULL DEFAULT '',
   phone TEXT NOT NULL,
   whatsapp_status whatsapp_status DEFAULT 'not_sent',
-  source TEXT,
+  source TEXT DEFAULT '',
   listing_url TEXT,
-  property_type TEXT,
-  neighborhood TEXT,
+  property_type TEXT DEFAULT 'apartment',
+  neighborhood TEXT DEFAULT '',
   city TEXT NOT NULL,
-  price DECIMAL(12, 2),
+  price DECIMAL(12, 2) DEFAULT 0,
   area_m2 DECIMAL(8, 2),
   bedrooms INTEGER,
   seller_type seller_type DEFAULT 'unknown',
@@ -96,14 +179,66 @@ CREATE TABLE leads (
   notes TEXT
 );
 
+-- Buyers table
+CREATE TABLE buyers (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  name TEXT NOT NULL,
+  email TEXT NOT NULL DEFAULT '',
+  phone TEXT NOT NULL DEFAULT '',
+  status buyer_status DEFAULT 'new',
+  buyer_type buyer_type DEFAULT 'first_time',
+  target_areas TEXT[] DEFAULT '{}',
+  property_types TEXT[] DEFAULT '{}',
+  budget_min DECIMAL(12, 2) DEFAULT 0,
+  budget_max DECIMAL(12, 2) DEFAULT 0,
+  min_bedrooms INTEGER,
+  min_area_m2 DECIMAL(8, 2),
+  timeline readiness_level DEFAULT 'browsing',
+  seriousness seriousness_level DEFAULT 'medium',
+  pre_approved BOOLEAN DEFAULT false,
+  cash_buyer BOOLEAN DEFAULT false,
+  next_action TEXT DEFAULT '',
+  next_action_date TIMESTAMPTZ,
+  notes TEXT,
+  language_preference language_preference DEFAULT 'en'
+);
+
+-- Finance Profiles table
+CREATE TABLE finance_profiles (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  buyer_id UUID REFERENCES buyers(id) ON DELETE CASCADE NOT NULL,
+  status finance_status DEFAULT 'incomplete',
+  documents JSONB DEFAULT '[]',
+  documents_complete BOOLEAN DEFAULT false,
+  completion_percentage INTEGER DEFAULT 0 CHECK (completion_percentage >= 0 AND completion_percentage <= 100),
+  annual_income DECIMAL(12, 2),
+  available_down_payment DECIMAL(12, 2),
+  existing_debt_monthly DECIMAL(10, 2),
+  estimated_max_budget DECIMAL(12, 2),
+  estimated_monthly_payment DECIMAL(10, 2),
+  affordability_status TEXT,
+  under_review_since TIMESTAMPTZ,
+  reviewed_by TEXT,
+  review_notes TEXT,
+  missing_documents TEXT[] DEFAULT '{}',
+  recommended_actions TEXT[] DEFAULT '{}'
+);
+
 -- Activities table
 CREATE TABLE activities (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  lead_id UUID REFERENCES leads(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   type activity_type NOT NULL,
   content TEXT NOT NULL,
-  operator_name TEXT NOT NULL
+  operator_name TEXT NOT NULL DEFAULT 'System',
+  lead_id UUID REFERENCES leads(id) ON DELETE CASCADE,
+  buyer_id UUID REFERENCES buyers(id) ON DELETE CASCADE,
+  match_id UUID,
+  mandate_id UUID
 );
 
 -- AI Outputs table
@@ -140,38 +275,102 @@ CREATE TABLE mandates (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   lead_id UUID REFERENCES leads(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  agency_name TEXT NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  agency_name TEXT NOT NULL DEFAULT 'Dealock Agency',
   exclusive BOOLEAN DEFAULT true,
   signing_mode signing_mode DEFAULT 'electronic',
   status mandate_status DEFAULT 'draft',
   signed_at TIMESTAMPTZ,
+  notes TEXT,
+  -- Property details for continuity
+  title TEXT,
+  asking_price DECIMAL(12, 2),
+  city TEXT,
+  neighborhood TEXT,
+  property_type TEXT,
+  area_m2 DECIMAL(8, 2),
+  bedrooms INTEGER
+);
+
+-- Match Opportunities table
+CREATE TABLE match_opportunities (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  -- Core relationships
+  buyer_id UUID REFERENCES buyers(id) ON DELETE CASCADE NOT NULL,
+  target_type target_type NOT NULL,
+  target_id UUID NOT NULL, -- Can reference mandates.id or leads.id
+  -- Match scoring
+  match_score match_score_band DEFAULT 'fair',
+  score_value INTEGER CHECK (score_value >= 0 AND score_value <= 100),
+  -- Analysis
+  match_reasons TEXT[] DEFAULT '{}',
+  blockers TEXT[] DEFAULT '{}',
+  recommended_action TEXT,
+  -- Status and priority
+  status match_status DEFAULT 'identified',
+  priority TEXT DEFAULT 'medium', -- low, medium, high, urgent
+  -- Notes
   notes TEXT
 );
 
--- Indexes for performance
+-- ============================================
+-- INDEXES
+-- ============================================
+
 CREATE INDEX idx_leads_status ON leads(status);
 CREATE INDEX idx_leads_city ON leads(city);
 CREATE INDEX idx_leads_created_at ON leads(created_at DESC);
 CREATE INDEX idx_leads_priority_score ON leads(priority_score DESC);
+
+CREATE INDEX idx_buyers_status ON buyers(status);
+CREATE INDEX idx_buyers_created_at ON buyers(created_at DESC);
+CREATE INDEX idx_buyers_buyer_type ON buyers(buyer_type);
+
+CREATE INDEX idx_finance_profiles_buyer_id ON finance_profiles(buyer_id);
+CREATE INDEX idx_finance_profiles_status ON finance_profiles(status);
+
 CREATE INDEX idx_activities_lead_id ON activities(lead_id);
+CREATE INDEX idx_activities_buyer_id ON activities(buyer_id);
 CREATE INDEX idx_activities_created_at ON activities(created_at DESC);
+
 CREATE INDEX idx_ai_outputs_lead_id ON ai_outputs(lead_id);
+
 CREATE INDEX idx_mandates_lead_id ON mandates(lead_id);
 CREATE INDEX idx_mandates_status ON mandates(status);
+CREATE INDEX idx_mandates_city ON mandates(city);
 
--- Row Level Security (RLS) policies
+CREATE INDEX idx_match_opportunities_buyer_id ON match_opportunities(buyer_id);
+CREATE INDEX idx_match_opportunities_target ON match_opportunities(target_type, target_id);
+CREATE INDEX idx_match_opportunities_status ON match_opportunities(status);
+CREATE INDEX idx_match_opportunities_score ON match_opportunities(score_value DESC);
+
+-- ============================================
+-- ROW LEVEL SECURITY
+-- ============================================
+
 ALTER TABLE leads ENABLE ROW LEVEL SECURITY;
+ALTER TABLE buyers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE finance_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE activities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_outputs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE mandates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE match_opportunities ENABLE ROW LEVEL SECURITY;
 
--- For Phase 2: Allow all access (will be restricted in Phase 3 with auth)
+-- For Phase 2: Allow all access (will be restricted with auth later)
 CREATE POLICY "Allow all" ON leads FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all" ON buyers FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all" ON finance_profiles FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all" ON activities FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all" ON ai_outputs FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all" ON mandates FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all" ON match_opportunities FOR ALL USING (true) WITH CHECK (true);
 
--- Function to auto-update updated_at
+-- ============================================
+-- AUTO-UPDATE TRIGGERS
+-- ============================================
+
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -180,8 +379,27 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- Trigger for leads updated_at
 CREATE TRIGGER update_leads_updated_at 
   BEFORE UPDATE ON leads 
+  FOR EACH ROW 
+  EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_buyers_updated_at 
+  BEFORE UPDATE ON buyers 
+  FOR EACH ROW 
+  EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_finance_profiles_updated_at 
+  BEFORE UPDATE ON finance_profiles 
+  FOR EACH ROW 
+  EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_mandates_updated_at 
+  BEFORE UPDATE ON mandates 
+  FOR EACH ROW 
+  EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_match_opportunities_updated_at 
+  BEFORE UPDATE ON match_opportunities 
   FOR EACH ROW 
   EXECUTE FUNCTION update_updated_at_column();

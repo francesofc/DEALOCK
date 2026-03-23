@@ -1,4 +1,4 @@
-// Internationalization (i18n) for MandateOS
+// Internationalization (i18n) for Dealock
 import { Language, TranslationDictionary, LANGUAGES } from '@/types/i18n'
 import { en } from './translations/en'
 import { fr } from './translations/fr'

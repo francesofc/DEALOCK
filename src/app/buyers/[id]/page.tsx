@@ -35,13 +35,16 @@ import {
   FileX,
   Euro,
   Search,
-  MessageCircle
+  MessageCircle,
+  Plus
 } from "lucide-react";
 import Link from "next/link";
-import { getBuyerById, getActivitiesByBuyerId, getMatches, getLeads, getFinanceProfileByBuyer } from "@/lib/data";
-import { Buyer, Activity, MatchOpportunity, Lead, FinanceProfile, BuyerStatus } from "@/types/database";
+import { getBuyerById, getActivitiesByBuyerId, getMatches, getLeads, getFinanceProfileByBuyer, updateBuyer, saveFinanceProfile, addActivity } from "@/lib/data";
+import { getBuyerNextAction, urgencyColor, getStaleness, getDaysSinceLastActivity } from "@/lib/intelligence/next-actions";
+import { Buyer, Activity, MatchOpportunity, Lead, FinanceProfile, BuyerStatus, ActivityType } from "@/types/database";
 import { EditDrawer } from "@/components/ui/EditDrawer";
 import { BuyerEditPanel } from "@/components/buyers/BuyerEditPanel";
+import { ActivityCreatePanel } from "@/components/activities/ActivityCreatePanel";
 
 // ============================================
 // STATUS MAPS
@@ -113,6 +116,15 @@ export default function BuyerDetailPage() {
   const [editedBuyer, setEditedBuyer] = useState<Buyer | null>(null);
   const [editedFinance, setEditedFinance] = useState<FinanceProfile | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  
+  // Activity creation state
+  const [isActivityDrawerOpen, setIsActivityDrawerOpen] = useState(false);
+  const [newActivityData, setNewActivityData] = useState<{ type: ActivityType; content: string; operator_name: string }>({
+    type: "note",
+    content: "",
+    operator_name: "Agent",
+  });
+  const [isAddingActivity, setIsAddingActivity] = useState(false);
 
   useEffect(() => {
     async function loadData() {
@@ -279,6 +291,14 @@ export default function BuyerDetailPage() {
           </div>
         </div>
       </section>
+
+      {/* NEXT ACTION CARD */}
+      <BuyerNextActionCard 
+        buyer={buyer}
+        activities={activities}
+        finance={finance}
+        matches={matches}
+      />
 
       {/* MAIN GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -470,46 +490,153 @@ export default function BuyerDetailPage() {
             <SectionHeader 
               icon={Puzzle}
               title="Match Opportunities"
-              subtitle="Properties matching this buyer's criteria"
+              subtitle={matches.length > 0 ? `${matches.length} property ${matches.length === 1 ? 'match' : 'matches'} found` : "Properties matching this buyer's criteria"}
             />
             {matches.length > 0 ? (
               <div className="space-y-3">
-                {matches.slice(0, 3).map((match) => {
-                  const lead = leads[match.seller_id];
-                  if (!lead) return null;
-                  
-                  return (
-                    <div 
-                      key={match.id}
-                      className="surface-subtle rounded-xl p-4 hover:bg-white/[0.04] transition-colors cursor-pointer"
-                      onClick={() => router.push(`/sellers/${lead.id}`)}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-white/[0.06] flex items-center justify-center">
-                            <Building2 className="w-5 h-5 text-white/50" />
+                {matches
+                  .sort((a, b) => {
+                    // Sort: excellent matches first, then by score, then by priority
+                    const scoreOrder = { excellent: 3, good: 2, fair: 1, weak: 0 };
+                    const priorityOrder = { urgent: 3, high: 2, medium: 1, low: 0 };
+                    if (scoreOrder[a.match_score] !== scoreOrder[b.match_score]) {
+                      return scoreOrder[b.match_score] - scoreOrder[a.match_score];
+                    }
+                    if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
+                      return priorityOrder[b.priority] - priorityOrder[a.priority];
+                    }
+                    return b.score_value - a.score_value;
+                  })
+                  .map((match) => {
+                    // Support both new schema (target_id) and legacy (seller_id)
+                    const leadId = match.target_type === 'seller' ? match.target_id : match.seller_id;
+                    if (!leadId) return null;
+                    const lead = leads[leadId];
+                    if (!lead) return null;
+                    
+                    // Determine if finance is blocking this match
+                    const isFinanceBlocking = !finance || 
+                      (finance.status !== 'ready_to_progress' && finance.status !== 'strong_buyer');
+                    
+                    // Determine next action based on match state and finance
+                    let nextAction = match.recommended_action;
+                    let actionDisabled = false;
+                    let actionLabel = "Send Opportunity";
+                    
+                    if (isFinanceBlocking) {
+                      actionLabel = "Finance Pending";
+                      actionDisabled = true;
+                    } else if (match.blockers && match.blockers.length > 0) {
+                      actionLabel = "Resolve Blockers";
+                      actionDisabled = true;
+                    } else if (match.status === 'contacted_buyer') {
+                      actionLabel = "Follow Up";
+                    } else if (['viewing_scheduled', 'offer_received', 'negotiating', 'closed'].includes(match.status)) {
+                      actionLabel = "In Progress";
+                      actionDisabled = true;
+                    }
+                    
+                    return (
+                      <div 
+                        key={match.id}
+                        className="surface-subtle rounded-xl p-4 hover:bg-white/[0.04] transition-colors cursor-pointer group"
+                        onClick={() => router.push(`/sellers/${lead.id}`)}
+                      >
+                        {/* Header: Property + Score */}
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                              match.match_score === 'excellent' ? 'bg-violet-500/10' :
+                              match.match_score === 'good' ? 'bg-emerald-500/10' :
+                              'bg-amber-500/10'
+                            }`}>
+                              <Building2 className={`w-5 h-5 ${
+                                match.match_score === 'excellent' ? 'text-violet-400' :
+                                match.match_score === 'good' ? 'text-emerald-400' :
+                                'text-amber-400'
+                              }`} />
+                            </div>
+                            <div>
+                              <p className="font-medium">{lead.neighborhood}, {lead.city}</p>
+                              <p className="text-sm text-white/40">
+                                {lead.property_type} · {formatCurrency(lead.price)}
+                              </p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="font-medium">{lead.neighborhood}</p>
-                            <p className="text-sm text-white/40">
-                              {lead.property_type} · {formatCurrency(lead.price)}
-                            </p>
+                          <div className="text-right">
+                            <Badge className={`${
+                              match.match_score === 'excellent' ? 'bg-violet-500/20 text-violet-400' :
+                              match.match_score === 'good' ? 'bg-emerald-500/20 text-emerald-400' :
+                              'bg-amber-500/20 text-amber-400'
+                            } border-0`}>
+                              {match.score_value}% Match
+                            </Badge>
+                            <p className="text-xs text-white/30 mt-1 capitalize">{match.match_score}</p>
                           </div>
                         </div>
-                        <Badge className={`${
-                          match.match_score === 'excellent' ? 'bg-violet-500/20 text-violet-400' :
-                          match.match_score === 'good' ? 'bg-emerald-500/20 text-emerald-400' :
-                          'bg-amber-500/20 text-amber-400'
-                        } border-0`}>
-                          {match.match_score_value}% Match
-                        </Badge>
+                        
+                        {/* Match Details */}
+                        <div className="flex flex-wrap gap-2 mb-3">
+                          <span className="px-2 py-1 rounded-lg bg-white/[0.04] text-xs text-white/50">
+                            Target: {match.target_type === 'mandate' ? 'Mandate' : 'Seller'}
+                          </span>
+                          <span className={`px-2 py-1 rounded-lg text-xs ${
+                            match.priority === 'urgent' ? 'bg-red-500/15 text-red-400' :
+                            match.priority === 'high' ? 'bg-orange-500/15 text-orange-400' :
+                            match.priority === 'medium' ? 'bg-blue-500/15 text-blue-400' :
+                            'bg-white/[0.04] text-white/50'
+                          }`}>
+                            {match.priority} priority
+                          </span>
+                          {match.blockers && match.blockers.length > 0 && (
+                            <span className="px-2 py-1 rounded-lg bg-amber-500/15 text-amber-400 text-xs flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3" />
+                              {match.blockers.length} blocker{match.blockers.length > 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </div>
+                        
+                        {/* Match Reasons */}
+                        {match.match_reasons && match.match_reasons.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mb-3">
+                            {match.match_reasons.slice(0, 3).map((reason, i) => (
+                              <span key={i} className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400/80 text-[10px]">
+                                {reason}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        
+                        {/* Finance Blocker Warning */}
+                        {isFinanceBlocking && (
+                          <div className="flex items-center gap-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 mb-3">
+                            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                            <p className="text-xs text-amber-400/80">
+                              Finance not ready — resolve documents first
+                            </p>
+                          </div>
+                        )}
+                        
+                        {/* Footer: Action + Status */}
+                        <div className="flex items-center justify-between pt-3 border-t border-white/[0.04]">
+                          <p className="text-sm text-white/50">{match.recommended_action}</p>
+                          <Button 
+                            size="sm" 
+                            variant={actionDisabled ? "ghost" : "default"}
+                            className={`gap-2 ${
+                              actionDisabled 
+                                ? 'text-white/30 hover:text-white/50' 
+                                : 'bg-white text-black hover:bg-white/90'
+                            }`}
+                            disabled={actionDisabled}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {actionLabel}
+                          </Button>
+                        </div>
                       </div>
-                      <div className="mt-3 pt-3 border-t border-white/[0.04]">
-                        <p className="text-sm text-white/50">{match.recommended_action}</p>
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
               </div>
             ) : (
               <EmptyState 
@@ -522,11 +649,26 @@ export default function BuyerDetailPage() {
 
           {/* Activity Timeline */}
           <section>
-            <SectionHeader 
-              icon={Clock}
-              title="Activity Timeline"
-              subtitle="Recent interactions"
-            />
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-white/[0.06] flex items-center justify-center">
+                  <Clock className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="font-medium">Activity Timeline</h2>
+                  <p className="text-sm text-white/40">Recent interactions</p>
+                </div>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="gap-2 border-white/10 hover:bg-white/[0.04]"
+                onClick={() => setIsActivityDrawerOpen(true)}
+              >
+                <Plus className="w-4 h-4" />
+                Add Activity
+              </Button>
+            </div>
             <div className="space-y-1">
               {activities.length > 0 ? (
                 activities.map((activity) => (
@@ -635,8 +777,13 @@ export default function BuyerDetailPage() {
           subtitle={`Editing ${buyer.name}`}
           onSave={async () => {
             setIsSaving(true);
-            // Simulate API call - in production, this would call your backend
+            // Persist to Supabase (with localStorage fallback)
             await new Promise(resolve => setTimeout(resolve, 500));
+            
+            await updateBuyer(editedBuyer);
+            if (editedFinance) {
+              await saveFinanceProfile(editedFinance);
+            }
             setBuyer(editedBuyer);
             if (editedFinance) {
               setFinance(editedFinance);
@@ -654,6 +801,51 @@ export default function BuyerDetailPage() {
           />
         </EditDrawer>
       )}
+
+      {/* Add Activity Drawer */}
+      <EditDrawer
+        isOpen={isActivityDrawerOpen}
+        onClose={() => {
+          setIsActivityDrawerOpen(false);
+          setNewActivityData({ type: "note", content: "", operator_name: "Agent" });
+        }}
+        title="Add Activity"
+        subtitle="Log an interaction or note"
+        onSave={async () => {
+          if (!newActivityData.content.trim()) return;
+          
+          setIsAddingActivity(true);
+          try {
+            const newActivity = await addActivity({
+              type: newActivityData.type,
+              content: newActivityData.content,
+              operator_name: newActivityData.operator_name,
+              lead_id: null,
+              buyer_id: buyerId,
+              match_id: null,
+              mandate_id: null,
+            });
+            
+            // Update local state immediately
+            setActivities(prev => [newActivity, ...prev]);
+            
+            // Close drawer and reset form
+            setIsActivityDrawerOpen(false);
+            setNewActivityData({ type: "note", content: "", operator_name: "Agent" });
+          } catch (error) {
+            console.error("Failed to add activity:", error);
+          } finally {
+            setIsAddingActivity(false);
+          }
+        }}
+        isSaving={isAddingActivity}
+        saveLabel="Save Activity"
+      >
+        <ActivityCreatePanel 
+          onChange={setNewActivityData}
+          defaultOperator="Agent"
+        />
+      </EditDrawer>
     </div>
   );
 }
@@ -692,6 +884,67 @@ function SectionHeader({
         {subtitle && <p className="text-sm text-white/40">{subtitle}</p>}
       </div>
     </div>
+  );
+}
+
+function BuyerNextActionCard({ 
+  buyer, 
+  activities, 
+  finance,
+  matches
+}: { 
+  buyer: Buyer; 
+  activities: Activity[]; 
+  finance: FinanceProfile | null;
+  matches: MatchOpportunity[];
+}) {
+  const nextAction = getBuyerNextAction(buyer, finance, activities, matches);
+  const daysSinceActivity = getDaysSinceLastActivity(activities);
+  const staleness = getStaleness(daysSinceActivity);
+  
+  return (
+    <section className="mb-8">
+      <div className={`surface-elevated rounded-2xl p-6 border ${urgencyColor(nextAction.urgency)}`}>
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          {/* Left: Action */}
+          <div className="flex-1">
+            <div className="flex items-center gap-3 mb-2">
+              <span className={`px-2.5 py-1 rounded-lg text-xs font-medium uppercase tracking-wider ${
+                nextAction.urgency === 'critical' ? 'bg-red-500 text-white' :
+                nextAction.urgency === 'high' ? 'bg-amber-500 text-black' :
+                nextAction.urgency === 'normal' ? 'bg-blue-500 text-white' :
+                'bg-white/20 text-white'
+              }`}>
+                {nextAction.urgency}
+              </span>
+              {daysSinceActivity > 3 && (
+                <span className={`text-xs ${staleness.color}`}>
+                  {staleness.label} · {daysSinceActivity} days
+                </span>
+              )}
+            </div>
+            <h2 className="text-xl font-semibold mb-1">{nextAction.action}</h2>
+            <p className="text-sm text-white/60">{nextAction.reason}</p>
+            {nextAction.suggested && (
+              <p className="text-sm text-white/40 mt-2">
+                <span className="text-white/50">Suggested:</span> {nextAction.suggested}
+              </p>
+            )}
+          </div>
+          
+          {/* Right: Quick Action */}
+          <div className="flex items-center gap-2">
+            <Button 
+              size="sm" 
+              className="gap-2 bg-white text-black hover:bg-white/90"
+            >
+              <Zap className="w-4 h-4" />
+              Take Action
+            </Button>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -737,7 +990,10 @@ function ActivityItem({ activity }: { activity: Activity }) {
       <div className="w-2 h-2 rounded-full bg-white/20 mt-2" />
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between">
-          <p className="font-medium">{activityTypeMap[activity.type]?.label || activity.type}</p>
+          <div className="flex items-center gap-2">
+            <p className="font-medium">{activityTypeMap[activity.type]?.label || activity.type}</p>
+            <span className="text-xs text-white/30">• {activity.operator_name}</span>
+          </div>
           <span className="text-xs text-white/30">
             {new Date(activity.created_at).toLocaleDateString()}
           </span>
@@ -793,6 +1049,7 @@ const activityTypeMap: Record<string, { label: string }> = {
   whatsapp: { label: "WhatsApp" },
   meeting: { label: "Meeting" },
   note: { label: "Note" },
+  follow_up: { label: "Follow Up" },
   mandate: { label: "Mandate" },
   lead: { label: "Lead" },
   buyer: { label: "Buyer" },

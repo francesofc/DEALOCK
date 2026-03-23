@@ -9,6 +9,7 @@ import {
   StickyNote, 
   Puzzle,
   Wallet,
+  Clock,
   LucideIcon 
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -29,6 +30,7 @@ const typeIcons: Record<ActivityType, LucideIcon> = {
   whatsapp: MessageSquare,
   meeting: Calendar,
   note: StickyNote,
+  follow_up: Clock,
   buyer: Users,
   match: Puzzle,
   finance: Wallet,
@@ -42,6 +44,7 @@ const typeColors: Record<ActivityType, string> = {
   whatsapp: "bg-green-600/20 text-green-500",
   meeting: "bg-yellow-500/20 text-yellow-400",
   note: "bg-gray-500/20 text-gray-400",
+  follow_up: "bg-pink-500/20 text-pink-400",
   buyer: "bg-cyan-500/20 text-cyan-400",
   match: "bg-violet-500/20 text-violet-400",
   finance: "bg-amber-500/20 text-amber-400",

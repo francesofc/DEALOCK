@@ -64,6 +64,8 @@
 - ✅ Translated in 4 languages on major screens
 - ✅ Premium dark UI with consistent design
 - ✅ Guided UX with strategic cockpits
+- ✅ Create/edit flows working with immediate UI updates
+- ✅ List rendering stable (no hidden records)
 - ✅ Using mock data (ready for backend)
 
 **Not yet:**
@@ -77,18 +79,23 @@
 ## Recommended Next Phases
 
 ### Phase 8: Form Experience Refinement 🎯
-**Priority:** High
+**Status:** Partially Complete (Stabilization Pass Done)
 
-**What:**
+**Completed:**
+- ✅ Create flows for Sellers and Buyers (drawer-based)
+- ✅ Edit flows with immediate state updates
+- ✅ List stability (no truncation, deterministic sorting)
+- ✅ Form state management cleanup
+
+**Remaining:**
 - Real-time validation on edit drawers
-- Better form state management
 - Autosave drafts
 - Field-level error messages
 
 **Why:**
-- Current forms work but feel basic
 - Agents will spend significant time in forms
 - Quality here affects daily experience
+- Recent stabilization fixed hidden-record bugs
 
 ---
 
