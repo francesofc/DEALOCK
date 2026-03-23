@@ -138,19 +138,21 @@ Don't reduce Match to a simple filter view. The scoring and recommendations are 
 
 ## Technical Decisions
 
-### Mock Data → Live Backend
+### Supabase for Production Data
 
-**Decision:** Start with typed mock data, build clear path to Supabase.
+**Decision:** Use Supabase (PostgreSQL) for production persistence.
 
 **Rationale:**
-- Frontend can be built without backend dependency
-- Types enforce contract between frontend and eventual backend
-- Easy to test different data scenarios
+- Real data persistence required for pilot agencies
+- Row-level security for multi-user scenarios
+- PostgreSQL is reliable and well-understood
+- Good TypeScript support
 
 **Implementation:**
 - All data functions in `src/lib/data/*.ts`
-- Supabase client code is commented out but ready
+- Supabase client fully integrated
 - Types match Supabase schema exactly
+- E2E tests run against production build with real Supabase
 
 ---
 
@@ -169,14 +171,59 @@ Don't introduce shadcn/ui or Material UI without reconsidering this decision. Th
 
 ---
 
-### Context for Language, Not Global State
+### E2E Testing Foundation
 
-**Decision:** Use React Context for language, not Redux/Zustand.
+**Decision:** Maintain Playwright E2E test suite as quality gate.
 
 **Rationale:**
-- Language is the only true global state needed
-- Context is sufficient for this use case
-- Avoids unnecessary dependency
+- Ensures critical user flows work
+- Catches regressions in data loading
+- Validates performance improvements
+- Required for confident deployment
+
+**Current State:**
+- 14 E2E tests covering all core flows
+- 100% pass rate after performance stabilization
+- Tests run against production build
+- Deterministic test data with fixed UUIDs
+
+---
+
+## Future Strategic Axes (Not Immediate Build Priorities)
+
+### AI Onboarding Accelerator
+
+**Concept:** Ultra-efficient onboarding via AI inference from limited input.
+
+**How it works:**
+- From agency name/website, infer and prefill useful context
+- Intelligent workspace initialization
+- Possible import/migration of existing CRM data
+
+**Strategic Value:**
+- Major time-to-value accelerator
+- Key product differentiator
+- Reduces friction for new agency adoption
+
+**Timeline:** Post-core stabilization. Not before pilot validation.
+
+---
+
+### Agentic Execution Layer
+
+**Concept:** AI agents accessible outside the platform via WhatsApp/Telegram.
+
+**How it works:**
+- Users interact with Dealock AI via messaging apps
+- Actions: check priorities, create profiles, add activities, surface matches
+- Supports text now, voice/audio later
+
+**Strategic Value:**
+- Execution interface sitting on top of Dealock cockpit
+- Major product differentiator
+- Fits natural agent workflow
+
+**Timeline:** Post-core stabilization. Not before product-market fit.
 
 ---
 
@@ -191,6 +238,8 @@ Don't introduce shadcn/ui or Material UI without reconsidering this decision. Th
 | Symbol branding | Visual identity |
 | 5-layer product model | Strategic scope definition |
 | Component library | Consistency and control |
+| E2E test coverage | Quality assurance |
+| Product plasticity | Ability to iterate based on real usage |
 
 ---
 
@@ -204,6 +253,8 @@ Don't introduce shadcn/ui or Material UI without reconsidering this decision. Th
 | Hardcoded English strings | Breaks i18n |
 | Complex state management | Unnecessary for this scope |
 | Horizontal logo in sidebar | Doesn't fit compact space |
+| Premature scale architecture | Pilot-first approach |
+| Frozen architecture | Product plasticity principle |
 
 ---
 

@@ -1,6 +1,6 @@
 # Dealock — Roadmap
 
-**Purpose:** Summarize completed work, current state, and recommended next phases.
+**Purpose:** Practical phased roadmap distinguishing completed work, near-term priorities, and future strategic directions.
 
 ---
 
@@ -20,14 +20,13 @@
 
 ### Phase 2: Data Layer
 - [x] TypeScript types for all entities
-- [x] Mock data service layer
 - [x] Supabase schema design
-- [x] Supabase client scaffold
+- [x] Supabase client integration
+- [x] Production data persistence
 
 ### Phase 3: Seller Intelligence
-- [x] Seller list page with priorities
+- [x] Seller list with priorities
 - [x] Seller Detail strategic cockpit
-- [x] Mock intelligence layer
 - [x] Mandate readiness scoring
 - [x] Next best action recommendations
 
@@ -39,7 +38,7 @@
 - [x] Activities tracking
 
 ### Phase 5: Experience Polish
-- [x] Command Center redesign (action-first)
+- [x] Command Center redesign
 - [x] Premium UI refinement
 - [x] Edit drawers for sellers/buyers
 - [x] Consistent detail page quality
@@ -47,83 +46,142 @@
 ### Phase 6: Multilingual
 - [x] i18n architecture
 - [x] Language switching
-- [x] EN/FR/PT/ES translations on core screens
+- [x] EN/FR/PT/ES translations
 - [x] Type-safe translation dictionaries
 
-### Phase 7: Branding
+### Phase 7: Branding & Stability
 - [x] Dealock symbol integration
 - [x] Sidebar branding
-- [x] Premium visual identity locked
+- [x] Premium visual identity
+- [x] List rendering stability fixes
+
+### Phase 8: Testing & Performance
+- [x] Playwright E2E foundation
+- [x] Deterministic test data strategy
+- [x] Test data deduplication (fixed UUIDs)
+- [x] Parallel loading optimizations
+- [x] Page load performance fixes
+- [x] 100% E2E test pass rate
 
 ---
 
 ## Current State
 
 **The app is:**
-- ✅ Fully navigable with all 5 core layers
-- ✅ Translated in 4 languages on major screens
+- ✅ Fully operational with all 5 core layers
+- ✅ Connected to Supabase (production data)
+- ✅ Translated in 4 languages
 - ✅ Premium dark UI with consistent design
-- ✅ Guided UX with strategic cockpits
-- ✅ Create/edit flows working with immediate UI updates
-- ✅ List rendering stable (no hidden records)
-- ✅ Using mock data (ready for backend)
+- ✅ E2E test suite with 100% pass rate
+- ✅ Performance optimized for data loading
+- ✅ Pilot-ready for agency deployment
 
 **Not yet:**
-- ❌ Connected to live Supabase backend
 - ❌ Authenticated (no login yet)
 - ❌ With live AI (mock intelligence only)
-- ❌ With automation (no WhatsApp/email sending)
+- ❌ With external AI agents (WhatsApp/Telegram)
+- ❌ Deployed at scale with production agencies
 
 ---
 
-## Recommended Next Phases
+## Near-Term Priorities (Pre-Pilot)
 
-### Phase 8: Form Experience Refinement 🎯
-**Status:** Partially Complete (Stabilization Pass Done)
-
-**Completed:**
-- ✅ Create flows for Sellers and Buyers (drawer-based)
-- ✅ Edit flows with immediate state updates
-- ✅ List stability (no truncation, deterministic sorting)
-- ✅ Form state management cleanup
-
-**Remaining:**
-- Real-time validation on edit drawers
-- Autosave drafts
-- Field-level error messages
-
-**Why:**
-- Agents will spend significant time in forms
-- Quality here affects daily experience
-- Recent stabilization fixed hidden-record bugs
-
----
-
-### Phase 9: Backend Persistence 🎯
+### Phase 9: Authentication & Security 🎯
 **Priority:** High
 
 **What:**
-- Connect to Supabase
-- Real data instead of mock
-- Authentication (login/signup)
+- User authentication (login/signup)
 - Protected routes
-- Row-level security
+- Row-level security enforcement
+- Basic access control
 
 **Why:**
-- Required for any real usage
-- Mock data limits testing
-- Auth is prerequisite for multi-user
-
-**Note:** The scaffold is ready — mostly uncommenting and configuring.
+- Required for multi-user agency usage
+- Prerequisite for pilot deployment
 
 ---
 
-### Phase 10: Intelligence Evolution 🎯
-**Priority:** Medium-High
+### Phase 10: Pilot Preparation 🎯
+**Priority:** High
+
+**What:**
+- Agency onboarding flow
+- Initial workspace setup
+- Basic import capabilities
+- Pilot feedback collection mechanism
+
+**Why:**
+- Ready for 2-3 pilot agencies
+- Validate with real usage
+- Observe actual workflows
+
+---
+
+### Phase 11: Real Usage Iteration 🎯
+**Priority:** High (contingent on pilot feedback)
+
+**What:**
+- Iterate based on pilot observations
+- Fix real friction points
+- Add requested capabilities
+- Maintain product plasticity
+
+**Why:**
+- Product must evolve with field usage
+- Don't freeze architecture prematurely
+- Build what agents actually need
+
+---
+
+## Future Strategic Axes (Post-Core Stabilization)
+
+These are major product differentiators planned for after pilot validation and core stabilization.
+
+### AI Onboarding Accelerator
+**Priority:** Medium-High (Future)
+
+**Concept:**
+Ultra-efficient onboarding via AI inference from limited input:
+- Agency name/website → infer context
+- Public data enrichment
+- Intelligent workspace initialization
+- CRM data import if feasible
+
+**Strategic Value:**
+- Major time-to-value accelerator
+- Key product differentiator
+- Reduces friction for new agency adoption
+
+**Timeline:** After pilot validation and core stabilization.
+
+---
+
+### Agentic Execution Layer
+**Priority:** Medium (Future)
+
+**Concept:**
+AI agents accessible via WhatsApp/Telegram:
+- Check priorities: "What should I do today?"
+- Create profiles: "Add new buyer John Doe..."
+- Add activities: "Logged call with seller..."
+- Surface matches: "Show me good matches for buyer X"
+- Text input now, voice/audio later
+
+**Strategic Value:**
+- Execution interface on top of Dealock cockpit
+- Major product differentiator
+- Fits natural agent workflow
+
+**Timeline:** After product-market fit validation.
+
+---
+
+### Live AI Integration
+**Priority:** Medium (Future)
 
 **What:**
 - Replace mock intelligence with live AI
-- Integration with LLM API
+- LLM API integration
 - Better prompt engineering
 - Caching for performance
 
@@ -132,124 +190,87 @@
 - Live AI adapts to actual data
 - Core differentiator of the product
 
+**Timeline:** After pilot validation when real data patterns are understood.
+
 ---
 
-### Phase 11: Matching Logic 🎯
-**Priority:** Medium
+### Matching Logic Evolution
+**Priority:** Medium (Future)
 
 **What:**
-- Automated match scoring
-- Better fit algorithms
+- Automated match scoring improvements
+- Better fit algorithms based on real data
 - Match notifications
 - Match action workflows
 
 **Why:**
 - Currently matches are manually created
-- Automation here adds significant value
+- Automation adds significant value
 - Natural evolution of the match layer
 
 ---
 
-### Phase 12: Finance Readiness Evolution 🎯
-**Priority:** Medium
+### Multi-Agency Model
+**Priority:** Low-Medium (Future)
 
 **What:**
-- Document upload (if needed)
-- Affordability calculations
-- Better visualization
-- Integration with credit check APIs (future)
+- Agency management layer
+- Multi-user permissions
+- Team collaboration features
+- Admin dashboards
 
 **Why:**
-- Current finance tracking is basic checklist
-- Can add real value with calculations
-- Keep scope bounded (don't become mortgage engine)
-
----
-
-### Phase 13: Automation Layer 🎯
-**Priority:** Medium
-
-**What:**
-- WhatsApp integration scaffold
-- Email templates
-- Scheduled follow-ups
-- Reminder system
-
-**Why:**
-- Agents want to act on recommendations
-- Communication is part of workflow
-- Can start with templates, expand later
-
----
-
-### Phase 14: Localization Polish 🎯
-**Priority:** Low-Medium
-
-**What:**
-- Russian translation (RU)
-- Date/number formatting per locale
-- RTL consideration (if ever needed)
-- Deep translation coverage (secondary screens)
-
-**Why:**
-- Core screens are covered
-- Nice-to-have for completeness
-- Russian market expansion
-
----
-
-### Phase 15: Landing & Marketing 🎯
-**Priority:** Low (for product, High for business)
-
-**What:**
-- Public landing page
-- Pricing page
-- Feature highlights
-- Signup flow
-
-**Why:**
-- Required for customer acquisition
-- Separate from product app
-- Can use Next.js with different layout
+- Current focus is individual agents/pilot agencies
+- Scale comes after product validation
+- Don't overbuild before usage patterns are clear
 
 ---
 
 ## Decision Points
 
-### Backend: When to Connect?
-**Recommendation:** After Phase 8 (forms) or during Phase 9.
+### When to Connect Pilot Agencies?
+**Recommendation:** After Phase 9 (authentication) and Phase 10 (pilot prep).
 
-Forms refinement can happen with mock data. Backend connection is prerequisite for beta users.
+Authentication is prerequisite. Onboarding flow should be smooth before inviting pilots.
 
-### Live AI: When to Integrate?
-**Recommendation:** Phase 10, after backend is stable.
+### When to Build AI Onboarding?
+**Recommendation:** After pilot validation.
 
-Need real data to get value from AI. Mock intelligence is sufficient for UI development.
+Need to understand what agencies actually need onboarded before automating it.
+
+### When to Build Agentic Execution?
+**Recommendation:** After product-market fit.
+
+External agents add complexity. Core product must be solid first.
 
 ### Mobile App?
-**Recommendation:** Not yet. PWA consideration first.
+**Recommendation:** Not yet. Responsive web is sufficient for MVP.
 
-Current responsive web is sufficient for MVP. Native apps are significant investment.
-
-### Advanced Reporting?
-**Recommendation:** Phase 16+, after core workflows are solid.
-
-Analytics are nice-to-have. Guided action is core value.
+Consider PWA before native apps. Native is significant investment.
 
 ---
 
-## Success Metrics for Next Phases
+## Success Metrics by Phase
 
 | Phase | Success Looks Like |
 |-------|-------------------|
-| Form Refinement | Agents can edit without confusion, validation is clear |
-| Backend | Data persists, auth works, multi-user ready |
-| Live AI | Recommendations adapt to actual lead data |
-| Matching | Good matches surface automatically |
-| Finance | Agents trust readiness scores |
-| Automation | Follow-ups happen without friction |
+| Authentication | Secure login, protected routes, basic access control |
+| Pilot Prep | Smooth onboarding, agencies can start using independently |
+| Real Usage Iteration | Product changes based on observed usage, not assumptions |
+| AI Onboarding | New agencies productive in minutes, not hours |
+| Agentic Execution | Users naturally interact via messaging for quick actions |
+| Live AI | Recommendations adapt to actual lead and deal data |
 
 ---
 
-*For product decisions already made, see PRODUCT_MEMORY.md*
+## Strategic Principles (Karim Chouikri)
+
+1. **Product Plasticity** — Keep architecture evolutive, don't freeze too early
+2. **Pilot-First** — Validate with 2-3 agencies before scaling
+3. **Security-First** — Strong data protection from day one
+4. **IP Consideration** — Think about entity structure (Ireland)
+
+---
+
+*For product decisions, see PRODUCT_MEMORY.md*
 *For current structure, see PROJECT_CONTEXT.md*

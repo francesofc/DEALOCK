@@ -1,47 +1,70 @@
 # Dealock
 
-**Commercial Real Estate Intelligence** — AI-powered seller mandate operating system for real estate agents.
+**Commercial Real Estate Operating System** — Premium SaaS for real estate agents and agencies managing mandates, sellers, buyers, and deals.
 
-## Overview
+## What Dealock Is
 
-Dealock is a premium commercial real estate platform that helps agents manage seller leads, track mandates, and streamline the path to exclusivity agreements. The system provides intelligent workflows, AI-powered seller insights, and comprehensive pipeline management.
+Dealock is a serious proptech SaaS focused on commercial execution. It transforms a blurry real estate pipeline into a structured, actionable commercial cockpit.
 
-## Current Phase
+**Core Purpose:**
+- Help agents and agencies operate and manage sellers, mandates, buyers, finance, match opportunities, activities, and next actions
+- Turn scattered deal information into clear commercial priorities
+- Provide a premium, executive-grade daily operating environment
 
-**Product Experience Refocus** ✅
+**Target Users:**
+- Strong individual agents
+- Boutique and premium agencies
+- Agencies dealing with demanding, international, off-market, or relationship-driven clients
 
-This phase transforms Dealock from a generic dashboard into a premium, guided, seller intelligence platform focused on mandate conversion.
+## What Dealock Is NOT
 
-### Product Experience Highlights
+- Not a simple contact CRM
+- Not a property listing site
+- Not a scraping bot
+- Not an unsolicited bulk messaging tool
 
-- **Command Center**: Executive action cockpit replacing generic analytics
-- **Seller Intelligence**: AI-powered analysis including mindset, relationship state, deal momentum
-- **Commercial Cockpit**: Lead detail page with strategic guidance and next best actions
-- **Guided UX**: Clear action guidance, prioritization, and premium executive design
-- **Multilingual Scaffold**: Full i18n architecture for EN, FR, PT, ES (RU planned)
-- **Mandate Activation**: Post-mandate strategy generation UX
+## The 5 Core Layers
 
-### Previous Phases
+### 1. Seller Intelligence
+Lead tracking, mandate readiness scoring, and strategic guidance for seller conversion.
 
-**Phase 2: Backend Foundation** ✅
-- Supabase integration scaffold
-- Database schema (leads, activities, mandates, ai_outputs)
-- Typed data service layer
-- Auth scaffold
+### 2. Buyer Qualification
+Buyer profiles, seriousness tracking, search criteria, and pre-approval status.
 
-**Phase 1: Frontend Foundation** ✅
-- Premium dashboard shell
-- UI component library
-- Dark executive theme
+### 3. Match Intelligence
+Opportunity identification, fit scoring, and recommended actions between buyers and properties.
+
+### 4. Mandate Management
+Exclusivity tracking, mandate lifecycle (draft → sent → signed), and activation strategies.
+
+### 5. Finance Readiness
+Document checklist tracking, completion percentages, and buyer financial qualification status.
+
+## Current Product State
+
+**Advanced and Functional:**
+- ✅ Supabase persistence foundation (PostgreSQL + Auth)
+- ✅ All 5 core layers operational
+- ✅ Sellers, buyers, mandates, finance profiles, match opportunities
+- ✅ Activities and next actions tracking
+- ✅ Mandate ↔ seller status synchronization
+- ✅ Manual match override flow
+- ✅ Automatic match generation (Phase 1)
+- ✅ Playwright E2E foundation with 100% test pass rate
+- ✅ Performance optimizations on key loading pages
+- ✅ Multilingual support (EN, FR, PT, ES)
+- ✅ Premium dark UI design system
+
+**Status:** Pilot-ready. Not yet deployed at scale with production agencies.
 
 ## Tech Stack
 
 - **Framework:** Next.js 14 (App Router)
-- **Language:** TypeScript
+- **Language:** TypeScript (strict)
 - **Styling:** Tailwind CSS
-- **UI Components:** Custom components
-- **Icons:** Lucide React
+- **Components:** Custom library
 - **Backend:** Supabase (PostgreSQL + Auth)
+- **Testing:** Playwright E2E
 - **Deployment:** Vercel-ready
 
 ## Project Structure
@@ -49,184 +72,74 @@ This phase transforms Dealock from a generic dashboard into a premium, guided, s
 ```
 dealock/
 ├── src/
-│   ├── app/                    # Next.js App Router pages
-│   │   ├── leads/             # Leads management with intelligence
-│   │   ├── pipeline/          # Pipeline kanban with bottlenecks
-│   │   ├── activities/        # Activity tracking
-│   │   ├── mandates/          # Mandate management with activation
-│   │   ├── settings/          # Settings with languages
-│   │   ├── globals.css        # Global styles
-│   │   ├── layout.tsx         # Root layout
-│   │   └── page.tsx           # Command Center (dashboard)
+│   ├── app/                    # Next.js App Router
+│   │   ├── page.tsx           # Command Center
+│   │   ├── sellers/           # Seller management
+│   │   ├── buyers/            # Buyer management
+│   │   ├── match/             # Match opportunities
+│   │   ├── mandates/          # Mandate portfolio
+│   │   ├── finance/           # Finance readiness
+│   │   ├── activities/        # Activity timeline
+│   │   └── settings/          # Configuration
 │   ├── components/
-│   │   ├── layout/            # Layout components
-│   │   └── ui/                # Reusable UI components
+│   │   ├── layout/            # Sidebar, Header
+│   │   └── ui/                # Reusable components
 │   ├── lib/
-│   │   ├── supabase/          # Supabase client setup
 │   │   ├── data/              # Data service layer
-│   │   ├── auth/              # Auth configuration
 │   │   ├── i18n/              # Internationalization
-│   │   │   └── translations/  # EN, FR, PT, ES dictionaries
-│   │   ├── intelligence/      # Seller intelligence (transitional)
-│   │   └── utils.ts           # Utility functions
-│   └── types/
-│       ├── database.ts        # Database types
-│       ├── seller-intelligence.ts  # Intelligence types
-│       └── i18n.ts            # i18n types
+│   │   ├── intelligence/      # AI/analysis layer
+│   │   └── supabase/          # Backend client
+│   └── types/                 # TypeScript types
+├── tests/
+│   └── e2e/                   # Playwright E2E tests
 ├── supabase/
-│   ├── schema.sql             # Database schema
-│   └── seed.sql               # Demo/seed data
-└── ...config files
+│   └── schema.sql             # Database schema
+└── scripts/
+    └── start-e2e-server.sh    # E2E test server
 ```
 
-## Key Features
-
-### Command Center (/)
-Your mandate conversion command center:
-- **Today's Focus**: Priority actions needing immediate attention
-- **Key Metrics**: Active mandates, pipeline value, conversion rate
-- **Priority Sellers**: High-value leads ranked by mandate readiness
-- **AI Signals**: Strategic insights and recommendations
-
-### Leads Management (/leads)
-Curated commercial leads list:
-- Scannable table with mandate readiness bars
-- Visual priority indicators
-- Quick "Analyze" actions
-- Contact methods at a glance
-
-### Commercial Cockpit (/leads/[id])
-The main commercial interface for each lead:
-- **Hero Summary**: Lead status, mandate readiness bar, property details
-- **Seller Intelligence Panel** (4-quadrant analysis):
-  - Seller Mindset (frustrated, rational, emotional, urgent, etc.)
-  - Relationship State (cold, engaged, developing trust, etc.)
-  - Deal Momentum (weak, stable, improving, near mandate, etc.)
-  - Recommended Angle (data-driven, emotional, exclusivity value, etc.)
-- **Next Best Move** card with suggested timing and tone
-- **What to Avoid** card
-- **Suggested Opening** message
-- **Signals**: Positive (green) and Risk (red)
-- **Property Details** grid
-- **Mandate Status** with activation strategy action
-
-### Pipeline (/pipeline)
-Strategic deal flow with bottleneck detection:
-- **Bottleneck Summary**: Stuck deals, awaiting reply, proposals, hot leads
-- **Kanban Board**: Larger cards with value, days in stage, actions
-- **Value Tracking**: Totals per stage
-- **Horizontal scrolling** with snap points
-
-### Mandates (/mandates)
-Active asset management with portfolio view:
-- **Portfolio Hero**: Total value, active count, exclusive count, expiring
-- **Segmentation Tabs**: Active, Pending Signature, At Risk
-- **Activation Strategy** CTA for signed mandates
-- Asset table with key metrics
-
-### Settings (/settings)
-- Profile management
-- **Languages**: Interface language + communication language preferences
-- AI settings
-- Business defaults
-- Notifications
-
-## Seller Intelligence (Transitional)
-
-The app includes a transitional seller intelligence layer that simulates AI analysis:
-
-```typescript
-// Intelligence outputs include:
-- seller_mindset: 'frustrated' | 'rational' | 'emotional' | 'urgent' | ...
-- relationship_state: 'cold' | 'engaged' | 'developing_trust' | ...
-- deal_momentum: 'weak' | 'stable' | 'improving' | 'near_mandate' | ...
-- recommended_angle: 'data_driven' | 'emotional' | 'exclusivity_value' | ...
-- tone_to_use: 'professional_confident' | 'warm_personal' | ...
-- next_best_move: 'schedule_call' | 'send_mandate_proposal' | ...
-- suggested_timing: 'immediate' | 'today' | 'tomorrow' | ...
-- mandate_readiness_score: 0-100
-- exclusivity_potential: 'low' | 'medium' | 'high' | 'very_high'
-```
-
-This layer is powered by `src/lib/intelligence/mock-intelligence.ts` and generates realistic analysis based on lead characteristics. It will be replaced with live AI integration in a future phase.
-
-## Multilingual Support
-
-Full i18n architecture in place:
-
-```typescript
-// Supported languages
-- English (en) ✅
-- French (fr) ✅
-- Portuguese (pt) ✅
-- Spanish (es) ✅
-- Russian (ru) 📝 Planned
-```
-
-Translation dictionaries are in `src/lib/i18n/translations/`.
-
-## Local Development
+## Development
 
 ### Prerequisites
-
-- Node.js 18+ 
-- npm or yarn
-- Supabase account (for production)
+- Node.js 18+
+- Supabase account (for production data)
 
 ### Setup
-
-1. Install dependencies:
 ```bash
 npm install
-```
-
-2. Set up environment variables:
-```bash
 cp .env.example .env.local
-```
-
-3. Run the development server:
-```bash
 npm run dev
 ```
 
-4. Open [http://localhost:3000](http://localhost:3000)
+### E2E Testing
+```bash
+# Start test server
+./scripts/start-e2e-server.sh
 
-## Database Setup (Optional for Phase 2)
+# Run E2E tests
+npx playwright test
+```
 
-The app works with mock data out of the box. To connect to Supabase:
+## Strategic Direction
 
-1. Create a Supabase project
-2. Run `supabase/schema.sql` in the SQL Editor
-3. Add credentials to `.env.local`
-4. Uncomment Supabase client code in `src/lib/data/*.ts`
+**Near-Term (Pilot Phase):**
+1. Deploy with 2-3 pilot agencies
+2. Observe real usage patterns
+3. Iterate based on field feedback
+4. Maintain product plasticity
 
-## Design Principles
+**Future Strategic Axes (Post-Core Stabilization):**
 
-- **Premium**: Executive-level quality with dark theme (#0a0a0a, #111, #171717)
-- **Action-First**: Focus on what to do next
-- **Intelligent**: AI-powered seller insights
-- **Guided**: Clear next actions, not just data
-- **Minimal**: Clean, uncluttered interface with breathing room
-- **Multilingual**: Ready for international markets
+**AI Onboarding Accelerator:**
+Ultra-efficient onboarding via AI inference from limited input (agency website, public data) to prefill context and accelerate time-to-value.
 
-## Roadmap
-
-### Completed ✅
-- Phase 1: Frontend foundation
-- Phase 2: Backend foundation
-- Product Experience Refocus
-- UX Refactor: All pages updated for Dealock premium positioning
-
-### Planned
-- **Phase 3**: Full authentication, protected routes, live Supabase data
-- **Phase 4**: Live AI integration for seller intelligence
-- **Phase 5**: WhatsApp/email automation, advanced reporting
+**Agentic Execution Layer:**
+WhatsApp/Telegram AI agents allowing users to interact with Dealock outside the platform (check priorities, create profiles, add activities, surface matches via voice/text).
 
 ## License
 
-Private - All rights reserved.
+Private — All rights reserved.
 
 ---
 
-*Dealock — Commercial Real Estate Intelligence*
+*Dealock — Commercial Real Estate Operating System*
