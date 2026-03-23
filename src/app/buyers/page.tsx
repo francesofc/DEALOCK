@@ -170,13 +170,21 @@ export default function BuyersPage() {
         const data = await getBuyers();
         setBuyers(data);
         
+        // Load finance profiles in parallel
+        const profileResults = await Promise.all(
+          data.map(async (buyer) => {
+            try {
+              const profile = await getFinanceProfileByBuyer(buyer.id);
+              return [buyer.id, profile] as [string, FinanceProfile | null];
+            } catch (profileErr) {
+              console.error(`Error loading finance profile for buyer ${buyer.id}:`, profileErr);
+              return [buyer.id, null] as [string, null];
+            }
+          })
+        );
         const profiles: Record<string, FinanceProfile | null> = {};
-        for (const buyer of data) {
-          try {
-            profiles[buyer.id] = await getFinanceProfileByBuyer(buyer.id);
-          } catch (profileErr) {
-            console.error(`Error loading finance profile for buyer ${buyer.id}:`, profileErr);
-          }
+        for (const [buyerId, profile] of profileResults) {
+          profiles[buyerId] = profile;
         }
         setFinanceMap(profiles);
       } catch (err) {
@@ -234,7 +242,7 @@ export default function BuyersPage() {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh]">
+      <div className="flex flex-col items-center justify-center h-[60vh]" data-testid="loading-spinner">
         <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mb-4" />
         <p className="text-white/50 text-sm">Loading buyers...</p>
       </div>
@@ -242,7 +250,7 @@ export default function BuyersPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto">
+    <div className="max-w-7xl mx-auto" data-testid="buyers-page" data-page-ready="true">
       {/* HEADER */}
       <div className="flex items-end justify-between mb-6 pb-6 border-b border-white/[0.06]">
         <div>
@@ -472,6 +480,7 @@ function BuyerRow({
     <div 
       className="group p-4 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:border-white/[0.08] hover:bg-white/[0.03] transition-all cursor-pointer"
       onClick={onClick}
+      data-testid="buyer-row"
     >
       <div className="flex items-center gap-4">
         {/* Seriousness Avatar */}

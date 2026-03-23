@@ -109,7 +109,7 @@ export default function MandatesPage() {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh]">
+      <div className="flex flex-col items-center justify-center h-[60vh]" data-testid="loading-spinner">
         <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mb-4" />
         <p className="text-white/50 text-sm">Loading mandates...</p>
       </div>
@@ -117,7 +117,7 @@ export default function MandatesPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto">
+    <div className="max-w-7xl mx-auto" data-testid="mandates-page" data-page-ready="true">
       {/* HEADER */}
       <div className="flex items-end justify-between mb-8 pb-6 border-b border-white/[0.06]">
         <div>

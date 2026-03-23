@@ -781,57 +781,13 @@ export function analysisToMatchOpportunity(
 }
 
 // ============================================
-// SERVICE LAYER (Future Implementation)
+// SERVICE LAYER
 // ============================================
 
 /**
- * MatchService interface for persistence layer
- * This will be implemented to save generated matches to Supabase
- */
-export interface MatchService {
-  /**
-   * Generate and persist matches for a buyer
-   */
-  generateAndSaveMatches(buyerId: string): Promise<MatchOpportunity[]>;
-  
-  /**
-   * Generate and persist matches for a property
-   */
-  generateAndSavePropertyMatches(propertyId: string, targetType: TargetType): Promise<MatchOpportunity[]>;
-  
-  /**
-   * Run full matching engine across all buyers and properties
-   */
-  runFullMatchingEngine(): Promise<{
-    created: number;
-    updated: number;
-    archived: number;
-  }>;
-  
-  /**
-   * Refresh matches for a specific buyer (re-run engine)
-   */
-  refreshBuyerMatches(buyerId: string): Promise<MatchOpportunity[]>;
-}
-
-/**
- * Placeholder for future MatchService implementation
+ * NOTE: The actual MatchService implementation is in match-service.ts
+ * This file contains the core engine logic only.
  * 
- * Usage (future):
- * const matchService = createMatchService(supabaseClient);
- * const newMatches = await matchService.generateAndSaveMatches(buyerId);
+ * Import from match-service.ts for the full service:
+ * import { MatchService, createMatchService } from './match-service';
  */
-export function createMatchService(
-  // supabase: SupabaseClient
-): MatchService {
-  // This is a stub for the future implementation
-  // It will:
-  // 1. Fetch all buyers with their criteria
-  // 2. Fetch all mandates and sellers
-  // 3. Run MatchEngine across all combinations
-  // 4. Persist non-existing matches to match_opportunities table
-  // 5. Update existing matches if scores changed significantly
-  // 6. Archive stale matches
-  
-  throw new Error('MatchService not yet implemented — this is architecture prep only');
-}

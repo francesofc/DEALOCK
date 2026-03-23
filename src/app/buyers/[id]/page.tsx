@@ -157,7 +157,7 @@ export default function BuyerDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh]">
+      <div className="flex flex-col items-center justify-center h-[60vh]" data-testid="loading-spinner">
         <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mb-4" />
         <p className="text-white/50 text-sm">Loading buyer profile...</p>
       </div>
@@ -183,8 +183,8 @@ export default function BuyerDetailPage() {
   const timeline = timelineMap[buyer.timeline];
 
   return (
-    <div className="max-w-7xl mx-auto">
-      {/* Navigation */}
+    <div className="max-w-7xl mx-auto" data-testid="buyer-detail-page" data-page-ready="true">
+      {/* Navigation -->
       <div className="flex items-center justify-between mb-6">
         <Link href="/buyers">
           <Button variant="ghost" size="sm" className="gap-2 text-white/60 hover:text-white hover:bg-white/[0.04]">

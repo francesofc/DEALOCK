@@ -23,10 +23,16 @@ import {
   UserPlus,
   Home,
   SlidersHorizontal,
-  Cpu
+  Cpu,
+  Play,
+  RefreshCw,
+  CheckCircle,
+  XCircle,
+  Filter
 } from "lucide-react";
 import { getMatches, getBuyers, getLeads, getMandates, getFinanceProfileByBuyer, createMatch } from "@/lib/data";
 import { getMatchNextAction, urgencyColor, UrgencyLevel } from "@/lib/intelligence/next-actions";
+import { runMatchGeneration, MatchGenerationResult } from "@/lib/intelligence/match-service";
 import { MatchOpportunity, Buyer, Lead, Mandate, MatchScore, FinanceProfile } from "@/types/database";
 
 // ============================================
@@ -368,6 +374,11 @@ export default function MatchPage() {
   const [isCreateDrawerOpen, setIsCreateDrawerOpen] = useState(false);
   const [newMatchData, setNewMatchData] = useState<Partial<MatchOpportunity>>({});
   const [isCreating, setIsCreating] = useState(false);
+  
+  // Auto Match Generation State
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generationResult, setGenerationResult] = useState<MatchGenerationResult | null>(null);
+  const [showResult, setShowResult] = useState(false);
 
   useEffect(() => {
     async function loadData() {
@@ -384,10 +395,16 @@ export default function MatchPage() {
         setSellers(sellersData.reduce((acc, s) => ({ ...acc, [s.id]: s }), {}));
         setMandates(mandatesData.reduce((acc, m) => ({ ...acc, [m.id]: m }), {}));
         
-        // Load finance profiles for buyers
+        // Load finance profiles for buyers in parallel
+        const financeProfileResults = await Promise.all(
+          buyersData.map(async (buyer) => {
+            const profile = await getFinanceProfileByBuyer(buyer.id);
+            return [buyer.id, profile] as [string, FinanceProfile | null];
+          })
+        );
         const financeProfiles: Record<string, FinanceProfile | null> = {};
-        for (const buyer of buyersData) {
-          financeProfiles[buyer.id] = await getFinanceProfileByBuyer(buyer.id);
+        for (const [buyerId, profile] of financeProfileResults) {
+          financeProfiles[buyerId] = profile;
         }
         setFinanceMap(financeProfiles);
       } catch (err) {
@@ -402,7 +419,7 @@ export default function MatchPage() {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh]">
+      <div className="flex flex-col items-center justify-center h-[60vh]" data-testid="loading-spinner">
         <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mb-4" />
         <p className="text-white/50 text-sm">Loading match opportunities...</p>
       </div>
@@ -451,7 +468,7 @@ export default function MatchPage() {
   const hasAnyMatches = excellentMatches.length > 0 || goodMatches.length > 0 || fairMatches.length > 0;
 
   return (
-    <div className="max-w-6xl mx-auto">
+    <div className="max-w-6xl mx-auto" data-testid="match-page" data-page-ready="true">
       {/* HEADER */}
       <div className="flex items-end justify-between mb-8 pb-6 border-b border-white/[0.06]">
         <div>
@@ -469,15 +486,101 @@ export default function MatchPage() {
             }
           </p>
         </div>
-        <Button 
-          variant="outline"
-          className="gap-2 border-white/10 hover:bg-white/[0.04]"
-          onClick={() => setIsCreateDrawerOpen(true)}
-        >
-          <SlidersHorizontal className="w-4 h-4" />
-          Manual Match
-        </Button>
+        <div className="flex items-center gap-3">
+          {/* Generate Matches Button - Primary Action */}
+          <Button 
+            className="gap-2 bg-white text-black hover:bg-white/90"
+            data-testid="generate-matches-button"
+            onClick={async () => {
+              setIsGenerating(true);
+              setShowResult(false);
+              try {
+                const result = await runMatchGeneration();
+                setGenerationResult(result);
+                setShowResult(true);
+                // Refresh matches
+                const matchesData = await getMatches();
+                setMatches(matchesData);
+              } catch (err) {
+                console.error('Match generation failed:', err);
+              } finally {
+                setIsGenerating(false);
+              }
+            }}
+            disabled={isGenerating}
+          >
+            {isGenerating ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <Play className="w-4 h-4" />
+            )}
+            {isGenerating ? 'Generating...' : 'Generate Matches'}
+          </Button>
+          
+          {/* Manual Match - Secondary/Override */}
+          <Button 
+            variant="outline"
+            className="gap-2 border-white/10 hover:bg-white/[0.04]"
+            data-testid="manual-match-button"
+            onClick={() => setIsCreateDrawerOpen(true)}
+          >
+            <SlidersHorizontal className="w-4 h-4" />
+            Manual
+          </Button>
+        </div>
       </div>
+
+      {/* GENERATION RESULT SUMMARY */}
+      {showResult && generationResult && (
+        <div className="mb-6 p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/20" data-testid="generation-summary">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="w-5 h-5 text-emerald-400" />
+              <span className="font-medium text-emerald-300">Generation Complete</span>
+            </div>
+            <button 
+              onClick={() => setShowResult(false)}
+              className="text-white/40 hover:text-white/60"
+            >
+              <XCircle className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="grid grid-cols-4 gap-4 text-sm">
+            <div className="p-3 rounded-lg bg-white/[0.03]">
+              <p className="text-2xl font-semibold text-emerald-400">{generationResult.created}</p>
+              <p className="text-white/50">New matches</p>
+            </div>
+            <div className="p-3 rounded-lg bg-white/[0.03]">
+              <p className="text-2xl font-semibold text-blue-400">{generationResult.analyzed}</p>
+              <p className="text-white/50">Analyzed</p>
+            </div>
+            <div className="p-3 rounded-lg bg-white/[0.03]">
+              <p className="text-2xl font-semibold text-amber-400">{generationResult.skipped}</p>
+              <p className="text-white/50">Duplicates skipped</p>
+            </div>
+            <div className="p-3 rounded-lg bg-white/[0.03]">
+              <p className="text-2xl font-semibold text-white/40">{generationResult.blocked}</p>
+              <p className="text-white/50">Below threshold</p>
+            </div>
+          </div>
+          {(generationResult.details.mandates > 0 || generationResult.details.sellers > 0) && (
+            <div className="mt-3 pt-3 border-t border-white/[0.06] flex items-center gap-4 text-xs text-white/40">
+              {generationResult.details.mandates > 0 && (
+                <span className="flex items-center gap-1">
+                  <div className="w-2 h-2 rounded-full bg-violet-400" />
+                  {generationResult.details.mandates} mandate matches
+                </span>
+              )}
+              {generationResult.details.sellers > 0 && (
+                <span className="flex items-center gap-1">
+                  <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                  {generationResult.details.sellers} seller matches
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {hasAnyMatches ? (
         <>
@@ -630,20 +733,43 @@ export default function MatchPage() {
             </div>
             <h3 className="text-xl font-medium mb-2">No matches yet</h3>
             <p className="text-white/40 text-sm max-w-md mx-auto mb-8">
-              Connect qualified buyers with your properties to unlock deal opportunities. 
-              The match engine analyzes budget, location, timeline, and readiness.
+              Run the match engine to automatically identify opportunities between your buyers 
+              and properties. The engine analyzes budget, location, timeline, and readiness.
             </p>
             <div className="flex items-center justify-center gap-3">
               <Button 
                 className="gap-2 bg-white text-black hover:bg-white/90"
+                onClick={async () => {
+                  setIsGenerating(true);
+                  setShowResult(false);
+                  try {
+                    const result = await runMatchGeneration();
+                    setGenerationResult(result);
+                    setShowResult(true);
+                    const matchesData = await getMatches();
+                    setMatches(matchesData);
+                  } catch (err) {
+                    console.error('Match generation failed:', err);
+                  } finally {
+                    setIsGenerating(false);
+                  }
+                }}
+                disabled={isGenerating}
+              >
+                {isGenerating ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Play className="w-4 h-4" />
+                )}
+                {isGenerating ? 'Generating...' : 'Generate Matches'}
+              </Button>
+              <Button 
+                variant="outline" 
+                className="gap-2 border-white/10 hover:bg-white/[0.04]"
                 onClick={() => setIsCreateDrawerOpen(true)}
               >
-                <Plus className="w-4 h-4" />
-                Create First Match
-              </Button>
-              <Button variant="outline" className="gap-2 border-white/10 hover:bg-white/[0.04]">
-                <Search className="w-4 h-4" />
-                Browse Buyers
+                <SlidersHorizontal className="w-4 h-4" />
+                Manual Match
               </Button>
             </div>
           </div>

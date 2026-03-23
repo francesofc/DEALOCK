@@ -315,7 +315,9 @@ function generateRiskSignals(leadData: {
 
 // Get all intelligence for a lead
 export async function getLeadIntelligence(leadId: string, leadData: any): Promise<SellerIntelligence> {
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 300))
+  // Simulate API delay (skip in test mode for faster E2E tests)
+  if (process.env.NEXT_PUBLIC_TEST_MODE !== 'true') {
+    await new Promise(resolve => setTimeout(resolve, 300))
+  }
   return generateIntelligenceForLead(leadId, leadData)
 }

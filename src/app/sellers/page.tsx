@@ -246,13 +246,22 @@ export default function SellersPage() {
       }
       setMandates(mandateMap);
       
+      // Load intelligence for all leads in parallel
+      const intelResults = await Promise.all(
+        leadsData.map(async (lead) => {
+          try {
+            const intel = await getLeadIntelligence(lead.id, lead);
+            return [lead.id, intel] as [string, SellerIntelligence];
+          } catch (intelErr) {
+            console.error(`Error loading intelligence for lead ${lead.id}:`, intelErr);
+            return null;
+          }
+        })
+      );
       const intelMap: Record<string, SellerIntelligence> = {};
-      for (const lead of leadsData) {
-        try {
-          const intel = await getLeadIntelligence(lead.id, lead);
-          intelMap[lead.id] = intel;
-        } catch (intelErr) {
-          console.error(`Error loading intelligence for lead ${lead.id}:`, intelErr);
+      for (const result of intelResults) {
+        if (result) {
+          intelMap[result[0]] = result[1];
         }
       }
       setIntelligence(intelMap);
@@ -375,7 +384,7 @@ export default function SellersPage() {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh]">
+      <div className="flex flex-col items-center justify-center h-[60vh]" data-testid="loading-spinner">
         <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mb-4" />
         <p className="text-white/50 text-sm">Loading your pipeline...</p>
       </div>
@@ -383,7 +392,7 @@ export default function SellersPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto">
+    <div className="max-w-7xl mx-auto" data-testid="sellers-page" data-page-ready="true">
       {/* HEADER */}
       <div className="flex items-end justify-between mb-6 pb-6 border-b border-white/[0.06]">
         <div>
@@ -629,6 +638,7 @@ function SellerRow({
     <div 
       className={`group p-4 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] hover:border-white/[0.08] transition-all cursor-pointer ${urgency.border}`}
       onClick={onClick}
+      data-testid="seller-row"
     >
       <div className="flex items-center gap-4">
         {/* Urgency Indicator */}

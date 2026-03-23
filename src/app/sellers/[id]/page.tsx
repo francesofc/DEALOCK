@@ -165,7 +165,7 @@ export default function SellerDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh]">
+      <div className="flex flex-col items-center justify-center h-[60vh]" data-testid="loading-spinner">
         <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mb-4" />
         <p className="text-white/50 text-sm">Loading seller profile...</p>
       </div>
@@ -234,7 +234,7 @@ export default function SellerDetailPage() {
   const status = statusMap[lead.status];
 
   return (
-    <div className="max-w-7xl mx-auto">
+    <div className="max-w-7xl mx-auto" data-testid="seller-detail-page" data-page-ready="true">
       {/* Navigation */}
       <div className="flex items-center justify-between mb-6">
         <Link href="/sellers">

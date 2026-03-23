@@ -137,6 +137,7 @@ export function MatchCreatePanel({ onChange }: MatchCreatePanelProps) {
         <select
           value={formData.buyer_id}
           onChange={(e) => updateField("buyer_id", e.target.value)}
+          data-testid="buyer-select"
           className="w-full px-3 py-2.5 bg-white/[0.03] border border-white/[0.08] rounded-lg text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
         >
           <option value="" className="bg-[#0d0d0f]">Select buyer...</option>
@@ -157,6 +158,7 @@ export function MatchCreatePanel({ onChange }: MatchCreatePanelProps) {
           <button
             type="button"
             onClick={() => handleTargetTypeChange('mandate')}
+            data-testid="target-type-mandate"
             className={`flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${
               formData.target_type === 'mandate'
                 ? "bg-violet-500/10 border-violet-500/30"
@@ -181,6 +183,7 @@ export function MatchCreatePanel({ onChange }: MatchCreatePanelProps) {
           <button
             type="button"
             onClick={() => handleTargetTypeChange('seller')}
+            data-testid="target-type-seller"
             className={`flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${
               formData.target_type === 'seller'
                 ? "bg-emerald-500/10 border-emerald-500/30"
@@ -215,6 +218,7 @@ export function MatchCreatePanel({ onChange }: MatchCreatePanelProps) {
           <select
             value={formData.target_id}
             onChange={(e) => updateField("target_id", e.target.value)}
+            data-testid="target-select"
             className="w-full px-3 py-2.5 bg-white/[0.03] border border-white/[0.08] rounded-lg text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
           >
             <option value="" className="bg-[#0d0d0f]">

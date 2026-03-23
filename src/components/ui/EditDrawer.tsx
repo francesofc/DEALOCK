@@ -110,6 +110,7 @@ export function EditDrawer({
           <Button
             onClick={onSave}
             disabled={isSaving || disabled}
+            data-testid="drawer-save-button"
             className="bg-white text-black hover:bg-white/90 disabled:opacity-50"
           >
             {isSaving ? `${t.common.save}...` : (saveLabel || t.common.save)}
