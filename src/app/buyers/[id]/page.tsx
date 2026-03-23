@@ -39,9 +39,9 @@ import {
   Plus
 } from "lucide-react";
 import Link from "next/link";
-import { getBuyerById, getActivitiesByBuyerId, getMatches, getLeads, getFinanceProfileByBuyer, updateBuyer, saveFinanceProfile, addActivity } from "@/lib/data";
+import { getBuyerById, getActivitiesByBuyerId, getMatches, getLeads, getMandates, getFinanceProfileByBuyer, updateBuyer, saveFinanceProfile, addActivity } from "@/lib/data";
 import { getBuyerNextAction, urgencyColor, getStaleness, getDaysSinceLastActivity } from "@/lib/intelligence/next-actions";
-import { Buyer, Activity, MatchOpportunity, Lead, FinanceProfile, BuyerStatus, ActivityType } from "@/types/database";
+import { Buyer, Activity, MatchOpportunity, Lead, Mandate, FinanceProfile, BuyerStatus, ActivityType } from "@/types/database";
 import { EditDrawer } from "@/components/ui/EditDrawer";
 import { BuyerEditPanel } from "@/components/buyers/BuyerEditPanel";
 import { ActivityCreatePanel } from "@/components/activities/ActivityCreatePanel";
@@ -111,6 +111,7 @@ export default function BuyerDetailPage() {
   const [finance, setFinance] = useState<FinanceProfile | null>(null);
   const [matches, setMatches] = useState<MatchOpportunity[]>([]);
   const [leads, setLeads] = useState<Record<string, Lead>>({});
+  const [mandates, setMandates] = useState<Record<string, Mandate>>({});
   const [loading, setLoading] = useState(true);
   const [isEditDrawerOpen, setIsEditDrawerOpen] = useState(false);
   const [editedBuyer, setEditedBuyer] = useState<Buyer | null>(null);
@@ -128,12 +129,13 @@ export default function BuyerDetailPage() {
 
   useEffect(() => {
     async function loadData() {
-      const [buyerData, activitiesData, financeData, matchesData, leadsData] = await Promise.all([
+      const [buyerData, activitiesData, financeData, matchesData, leadsData, mandatesData] = await Promise.all([
         getBuyerById(buyerId),
         getActivitiesByBuyerId(buyerId),
         getFinanceProfileByBuyer(buyerId),
         getMatches(),
         getLeads(),
+        getMandates(),
       ]);
       
       setBuyer(buyerData);
@@ -144,8 +146,9 @@ export default function BuyerDetailPage() {
       const buyerMatches = matchesData.filter(m => m.buyer_id === buyerId);
       setMatches(buyerMatches);
       
-      // Create leads map for match display
+      // Create lookup maps for match display
       setLeads(leadsData.reduce((acc, l) => ({ ...acc, [l.id]: l }), {}));
+      setMandates(mandatesData.reduce((acc, m) => ({ ...acc, [m.id]: m }), {}));
       
       setLoading(false);
     }
@@ -508,10 +511,23 @@ export default function BuyerDetailPage() {
                     return b.score_value - a.score_value;
                   })
                   .map((match) => {
-                    // Support both new schema (target_id) and legacy (seller_id)
-                    const leadId = match.target_type === 'seller' ? match.target_id : match.seller_id;
-                    if (!leadId) return null;
-                    const lead = leads[leadId];
+                    // Resolve the seller for display based on match target type
+                    let lead: Lead | null = null;
+                    
+                    if (match.target_type === 'seller') {
+                      // Direct seller match
+                      lead = leads[match.target_id] || null;
+                    } else if (match.target_type === 'mandate') {
+                      // Mandate match - get seller via mandate's lead_id
+                      const mandate = mandates[match.target_id];
+                      if (mandate) {
+                        lead = leads[mandate.lead_id] || null;
+                      }
+                    } else {
+                      // Legacy fallback
+                      lead = match.seller_id ? leads[match.seller_id] : null;
+                    }
+                    
                     if (!lead) return null;
                     
                     // Determine if finance is blocking this match

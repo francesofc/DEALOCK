@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { MatchOpportunity, MatchScore, TargetType } from "@/types/database";
-import { Star, AlertCircle, Check } from "lucide-react";
+import { MatchOpportunity, MatchScore, TargetType, Mandate, Lead } from "@/types/database";
+import { Star, AlertCircle, Check, Building2, UserCircle, FileCheck } from "lucide-react";
 import { getBuyers, getLeads, getMandates } from "@/lib/data";
 
 interface MatchCreatePanelProps {
@@ -24,12 +24,15 @@ const priorityOptions = [
 ];
 
 export function MatchCreatePanel({ onChange }: MatchCreatePanelProps) {
+  // Data lists
   const [buyers, setBuyers] = useState<{ id: string; name: string }[]>([]);
-  const [targets, setTargets] = useState<{ id: string; label: string; type: TargetType }[]>([]);
+  const [mandates, setMandates] = useState<Mandate[]>([]);
+  const [sellers, setSellers] = useState<Lead[]>([]);
   
+  // Form state with explicit target_type and target_id
   const [formData, setFormData] = useState<Partial<MatchOpportunity>>({
     buyer_id: "",
-    target_type: "mandate",
+    target_type: undefined, // Must be explicitly selected
     target_id: "",
     match_score: "good",
     score_value: 75,
@@ -44,6 +47,7 @@ export function MatchCreatePanel({ onChange }: MatchCreatePanelProps) {
   const [newReason, setNewReason] = useState("");
   const [newBlocker, setNewBlocker] = useState("");
 
+  // Load all reference data
   useEffect(() => {
     async function loadData() {
       const [buyersData, leadsData, mandatesData] = await Promise.all([
@@ -53,73 +57,81 @@ export function MatchCreatePanel({ onChange }: MatchCreatePanelProps) {
       ]);
       
       setBuyers(buyersData.map(b => ({ id: b.id, name: b.name })));
-      
-      const targetList = [
-        ...mandatesData.map(m => ({ 
-          id: m.id, 
-          label: `Mandate: ${m.title || m.city || 'Untitled'}`, 
-          type: "mandate" as TargetType 
-        })),
-        ...leadsData.map(l => ({ 
-          id: l.id, 
-          label: `Seller: ${l.owner_name} (${l.city})`, 
-          type: "seller" as TargetType 
-        })),
-      ];
-      setTargets(targetList);
+      setSellers(leadsData);
+      setMandates(mandatesData);
     }
     loadData();
   }, []);
 
+  // Notify parent of changes
+  useEffect(() => {
+    onChange(formData);
+  }, [formData, onChange]);
+
   const updateField = <K extends keyof MatchOpportunity>(field: K, value: MatchOpportunity[K]) => {
-    const updated = { ...formData, [field]: value };
-    setFormData(updated);
-    onChange(updated);
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  // When target_type changes, clear target_id
+  const handleTargetTypeChange = (newType: TargetType | "") => {
+    setFormData(prev => ({
+      ...prev,
+      target_type: newType as TargetType || undefined,
+      target_id: "", // Reset target when type changes
+    }));
   };
 
   const addReason = () => {
     if (!newReason.trim()) return;
-    const updated = { 
-      ...formData, 
-      match_reasons: [...(formData.match_reasons || []), newReason.trim()] 
-    };
-    setFormData(updated);
-    onChange(updated);
+    setFormData(prev => ({
+      ...prev,
+      match_reasons: [...(prev.match_reasons || []), newReason.trim()]
+    }));
     setNewReason("");
   };
 
   const removeReason = (index: number) => {
-    const updated = { 
-      ...formData, 
-      match_reasons: formData.match_reasons?.filter((_, i) => i !== index) || [] 
-    };
-    setFormData(updated);
-    onChange(updated);
+    setFormData(prev => ({
+      ...prev,
+      match_reasons: prev.match_reasons?.filter((_, i) => i !== index) || []
+    }));
   };
 
   const addBlocker = () => {
     if (!newBlocker.trim()) return;
-    const updated = { 
-      ...formData, 
-      blockers: [...(formData.blockers || []), newBlocker.trim()] 
-    };
-    setFormData(updated);
-    onChange(updated);
+    setFormData(prev => ({
+      ...prev,
+      blockers: [...(prev.blockers || []), newBlocker.trim()]
+    }));
     setNewBlocker("");
   };
 
   const removeBlocker = (index: number) => {
-    const updated = { 
-      ...formData, 
-      blockers: formData.blockers?.filter((_, i) => i !== index) || [] 
-    };
-    setFormData(updated);
-    onChange(updated);
+    setFormData(prev => ({
+      ...prev,
+      blockers: prev.blockers?.filter((_, i) => i !== index) || []
+    }));
   };
+
+  // Get the selected target display info
+  const getSelectedTarget = () => {
+    if (!formData.target_id || !formData.target_type) return null;
+    
+    if (formData.target_type === 'mandate') {
+      return mandates.find(m => m.id === formData.target_id);
+    } else {
+      return sellers.find(s => s.id === formData.target_id);
+    }
+  };
+
+  const selectedTarget = getSelectedTarget();
+  const isTargetMandate = (t: Mandate | Lead): t is Mandate => 'lead_id' in t;
 
   return (
     <div className="space-y-6">
-      {/* Buyer Selection */}
+      {/* ============================================
+          STEP 1: BUYER SELECTION
+          ============================================ */}
       <div className="space-y-1.5">
         <label className="text-xs text-white/50 uppercase tracking-wider">Buyer</label>
         <select
@@ -136,27 +148,150 @@ export function MatchCreatePanel({ onChange }: MatchCreatePanelProps) {
         </select>
       </div>
 
-      {/* Target Selection */}
-      <div className="space-y-1.5">
-        <label className="text-xs text-white/50 uppercase tracking-wider">Target Property</label>
-        <select
-          value={formData.target_id}
-          onChange={(e) => {
-            const target = targets.find(t => t.id === e.target.value);
-            updateField("target_id", e.target.value);
-            updateField("target_type", target?.type || "mandate");
-          }}
-          className="w-full px-3 py-2.5 bg-white/[0.03] border border-white/[0.08] rounded-lg text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
-        >
-          <option value="" className="bg-[#0d0d0f]">Select target...</option>
-          {targets.map(target => (
-            <option key={target.id} value={target.id} className="bg-[#0d0d0f]">
-              {target.label}
-            </option>
-          ))}
-        </select>
+      {/* ============================================
+          STEP 2: TARGET TYPE SELECTOR
+          ============================================ */}
+      <div className="space-y-2">
+        <label className="text-xs text-white/50 uppercase tracking-wider">Target Type</label>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => handleTargetTypeChange('mandate')}
+            className={`flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${
+              formData.target_type === 'mandate'
+                ? "bg-violet-500/10 border-violet-500/30"
+                : "bg-white/[0.03] border-white/[0.08] hover:bg-white/[0.06]"
+            }`}
+          >
+            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+              formData.target_type === 'mandate' ? 'bg-violet-500/20' : 'bg-white/[0.06]'
+            }`}>
+              <FileCheck className={`w-5 h-5 ${
+                formData.target_type === 'mandate' ? 'text-violet-400' : 'text-white/40'
+              }`} />
+            </div>
+            <div>
+              <p className={`font-medium ${formData.target_type === 'mandate' ? 'text-violet-300' : 'text-white/80'}`}>
+                Mandate
+              </p>
+              <p className="text-xs text-white/40">Signed exclusivity</p>
+            </div>
+          </button>
+          
+          <button
+            type="button"
+            onClick={() => handleTargetTypeChange('seller')}
+            className={`flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${
+              formData.target_type === 'seller'
+                ? "bg-emerald-500/10 border-emerald-500/30"
+                : "bg-white/[0.03] border-white/[0.08] hover:bg-white/[0.06]"
+            }`}
+          >
+            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+              formData.target_type === 'seller' ? 'bg-emerald-500/20' : 'bg-white/[0.06]'
+            }`}>
+              <UserCircle className={`w-5 h-5 ${
+                formData.target_type === 'seller' ? 'text-emerald-400' : 'text-white/40'
+              }`} />
+            </div>
+            <div>
+              <p className={`font-medium ${formData.target_type === 'seller' ? 'text-emerald-300' : 'text-white/80'}`}>
+                Seller
+              </p>
+              <p className="text-xs text-white/40">Pre-mandate lead</p>
+            </div>
+          </button>
+        </div>
       </div>
 
+      {/* ============================================
+          STEP 3: TARGET ID SELECTOR (Conditional)
+          ============================================ */}
+      {formData.target_type && (
+        <div className="space-y-1.5">
+          <label className="text-xs text-white/50 uppercase tracking-wider">
+            {formData.target_type === 'mandate' ? 'Select Mandate' : 'Select Seller'}
+          </label>
+          <select
+            value={formData.target_id}
+            onChange={(e) => updateField("target_id", e.target.value)}
+            className="w-full px-3 py-2.5 bg-white/[0.03] border border-white/[0.08] rounded-lg text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
+          >
+            <option value="" className="bg-[#0d0d0f]">
+              {formData.target_type === 'mandate' 
+                ? 'Choose a mandate...' 
+                : 'Choose a seller...'}
+            </option>
+            
+            {formData.target_type === 'mandate' ? (
+              mandates.map(mandate => (
+                <option key={mandate.id} value={mandate.id} className="bg-[#0d0d0f]">
+                  {mandate.title || mandate.city || 'Untitled'} 
+                  {mandate.exclusive ? ' (Exclusive)' : ''}
+                  {mandate.asking_price ? ` — €${(mandate.asking_price / 1000).toFixed(0)}k` : ''}
+                </option>
+              ))
+            ) : (
+              sellers.map(seller => (
+                <option key={seller.id} value={seller.id} className="bg-[#0d0d0f]">
+                  {seller.owner_name} — {seller.neighborhood}, {seller.city}
+                  {seller.price ? ` (€${(seller.price / 1000).toFixed(0)}k)` : ''}
+                </option>
+              ))
+            )}
+          </select>
+        </div>
+      )}
+
+      {/* ============================================
+          SELECTED TARGET DISPLAY
+          ============================================ */}
+      {selectedTarget && (
+        <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.08]">
+          <div className="flex items-center gap-3 mb-2">
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+              formData.target_type === 'mandate' ? 'bg-violet-500/15' : 'bg-emerald-500/15'
+            }`}>
+              {formData.target_type === 'mandate' ? (
+                <FileCheck className="w-4 h-4 text-violet-400" />
+              ) : (
+                <UserCircle className="w-4 h-4 text-emerald-400" />
+              )}
+            </div>
+            <div>
+              <p className="font-medium">
+                {isTargetMandate(selectedTarget) 
+                  ? (selectedTarget.title || selectedTarget.city || 'Untitled Mandate')
+                  : selectedTarget.owner_name}
+              </p>
+              <p className="text-xs text-white/50">
+                {formData.target_type === 'mandate' ? 'Exclusive Mandate' : 'Seller Lead'}
+                {isTargetMandate(selectedTarget) && selectedTarget.exclusive && ' • Exclusive'}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 mt-2 text-xs text-white/40">
+            <span className="flex items-center gap-1">
+              <Building2 className="w-3 h-3" />
+              {isTargetMandate(selectedTarget) 
+                ? (selectedTarget.city || 'Unknown location')
+                : `${selectedTarget.neighborhood}, ${selectedTarget.city}`}
+            </span>
+            {(isTargetMandate(selectedTarget) ? selectedTarget.asking_price : selectedTarget.price) && (
+              <span>
+                €{((isTargetMandate(selectedTarget) 
+                  ? selectedTarget.asking_price 
+                  : selectedTarget.price) || 0 / 1000).toLocaleString()}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ============================================
+          MATCH CONFIGURATION
+          ============================================ */}
+      
       {/* Score Selection */}
       <div className="space-y-3">
         <label className="text-xs text-white/50 uppercase tracking-wider">Match Score</label>

@@ -21,7 +21,9 @@ import {
   Sparkles,
   Search,
   UserPlus,
-  Home
+  Home,
+  SlidersHorizontal,
+  Cpu
 } from "lucide-react";
 import { getMatches, getBuyers, getLeads, getMandates, getFinanceProfileByBuyer, createMatch } from "@/lib/data";
 import { getMatchNextAction, urgencyColor, UrgencyLevel } from "@/lib/intelligence/next-actions";
@@ -453,20 +455,27 @@ export default function MatchPage() {
       {/* HEADER */}
       <div className="flex items-end justify-between mb-8 pb-6 border-b border-white/[0.06]">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Match</h1>
+          <div className="flex items-center gap-3 mb-2">
+            <h1 className="text-2xl font-semibold tracking-tight">Match Intelligence</h1>
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+              <Cpu className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="text-xs text-emerald-400 font-medium">Auto</span>
+            </div>
+          </div>
           <p className="text-white/40 mt-1">
             {validMatches.length > 0 
-              ? `${excellentMatches.length + goodMatches.length} high-value opportunities`
-              : "Strategic opportunity engine"
+              ? `${excellentMatches.length + goodMatches.length} high-value opportunities identified`
+              : "AI-powered opportunity detection and prioritization"
             }
           </p>
         </div>
         <Button 
-          className="gap-2 bg-white text-black hover:bg-white/90"
+          variant="outline"
+          className="gap-2 border-white/10 hover:bg-white/[0.04]"
           onClick={() => setIsCreateDrawerOpen(true)}
         >
-          <Plus className="w-4 h-4" />
-          Create Match
+          <SlidersHorizontal className="w-4 h-4" />
+          Manual Match
         </Button>
       </div>
 
@@ -660,17 +669,23 @@ export default function MatchPage() {
         </div>
       )}
 
-      {/* CREATE MATCH DRAWER */}
+      {/* MANUAL MATCH DRAWER - Secondary/Override Action */}
       <EditDrawer
         isOpen={isCreateDrawerOpen}
         onClose={() => {
           setIsCreateDrawerOpen(false);
           setNewMatchData({});
         }}
-        title="Create Match Opportunity"
-        subtitle="Connect a buyer with a property opportunity"
+        title="Add Manual Match"
+        subtitle="Override for special cases — automatic matching is primary"
         onSave={async () => {
-          if (!newMatchData.buyer_id || !newMatchData.target_id) {
+          // Validate required fields
+          if (!newMatchData.buyer_id || !newMatchData.target_type || !newMatchData.target_id) {
+            console.error('Missing required fields:', { 
+              buyer_id: newMatchData.buyer_id, 
+              target_type: newMatchData.target_type, 
+              target_id: newMatchData.target_id 
+            });
             return;
           }
           setIsCreating(true);
@@ -678,7 +693,7 @@ export default function MatchPage() {
             const match: MatchOpportunity = {
               id: crypto.randomUUID(),
               buyer_id: newMatchData.buyer_id,
-              target_type: newMatchData.target_type || 'mandate',
+              target_type: newMatchData.target_type,
               target_id: newMatchData.target_id,
               match_score: newMatchData.match_score || 'good',
               score_value: newMatchData.score_value || 75,
@@ -705,6 +720,7 @@ export default function MatchPage() {
         }}
         isSaving={isCreating}
         saveLabel="Create Match"
+        disabled={!newMatchData.buyer_id || !newMatchData.target_type || !newMatchData.target_id}
       >
         <MatchCreatePanel onChange={setNewMatchData} />
       </EditDrawer>

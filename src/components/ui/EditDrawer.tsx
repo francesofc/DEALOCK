@@ -15,6 +15,7 @@ interface EditDrawerProps {
   onSave?: () => void;
   isSaving?: boolean;
   saveLabel?: string;
+  disabled?: boolean;
 }
 
 export function EditDrawer({
@@ -26,6 +27,7 @@ export function EditDrawer({
   onSave,
   isSaving = false,
   saveLabel,
+  disabled = false,
 }: EditDrawerProps) {
   const { t } = useTranslation();
   // Handle escape key
@@ -107,7 +109,7 @@ export function EditDrawer({
           </Button>
           <Button
             onClick={onSave}
-            disabled={isSaving}
+            disabled={isSaving || disabled}
             className="bg-white text-black hover:bg-white/90 disabled:opacity-50"
           >
             {isSaving ? `${t.common.save}...` : (saveLabel || t.common.save)}
