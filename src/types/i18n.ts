@@ -401,6 +401,79 @@ export interface TranslationDictionary {
     }
   }
   
+  // Import
+  import: {
+    title: string
+    subtitle: string
+    phaseLabel: string
+    steps: {
+      upload: string
+      preview: string
+      validate: string
+      results: string
+    }
+    upload: {
+      title: string
+      description: string
+      selectFile: string
+      limits: string
+    }
+    template: {
+      required: string
+      requiredDesc: string
+      optional: string
+      optionalDesc: string
+    }
+    preview: {
+      title: string
+      rows: string
+      mapping: string
+      ignore: string
+      dataPreview: string
+      showingFirst: string
+      missingRequired: string
+      missingRequiredDesc: string
+      validate: string
+    }
+    validate: {
+      title: string
+      readyToImport: string
+      total: string
+      valid: string
+      invalid: string
+      duplicates: string
+      errors: string
+      downloadErrors: string
+      row: string
+      data: string
+      error: string
+      andMore: string
+      import: string
+      importing: string
+    }
+    results: {
+      success: string
+      imported: string
+      skipped: string
+      duplicates: string
+      importMore: string
+      viewSellers: string
+    }
+    errors: {
+      csvOnly: string
+      fileTooLarge: string
+      tooManyRows: string
+      parseFailed: string
+    }
+    validation: {
+      missingIdentifier: string
+      missingContact: string
+      invalidEmail: string
+      invalidPhone: string
+      duplicateInFile: string
+    }
+  }
+  
   // Common / UI
   common: {
     loading: string

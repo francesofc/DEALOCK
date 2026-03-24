@@ -1,188 +1,874 @@
-/**
- * ============================================
- * DEALOCK IMPORT / MIGRATION CENTER
- * ============================================
- * 
- * Architecture for future data import and migration capabilities.
- * Currently shows available options and prepares extension points
- * for CSV, CRM exports, and spreadsheet imports.
- */
+"use client";
 
-'use client';
-
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/Button';
-import { 
-  Upload, 
-  FileSpreadsheet, 
-  Database, 
-  ArrowLeft, 
-  ArrowRight,
-  CheckCircle2,
-  FileJson,
-  Building2,
+import { useState, useCallback, useMemo, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { Badge } from "@/components/ui/Badge";
+import {
+  Upload,
+  FileSpreadsheet,
+  CheckCircle,
+  AlertCircle,
+  X,
+  ChevronRight,
+  ChevronLeft,
+  Download,
+  Loader2,
   Users,
-  FileSignature
-} from 'lucide-react';
+  Building2,
+  FileCheck,
+  UserCircle,
+  Database,
+  Edit2,
+  EyeOff,
+  Eye,
+  RefreshCw,
+  Check,
+} from "lucide-react";
+import { useTranslation } from "@/lib/i18n";
+import Papa from "papaparse";
+import { createLead } from "@/lib/data/leads";
+import { createClient } from "@/lib/supabase/client";
 
-type ImportSource = 'csv' | 'spreadsheet' | 'crm' | null;
-type ImportEntity = 'sellers' | 'buyers' | 'mandates' | null;
+// ============================================
+// TYPES
+// ============================================
 
-interface ImportOption {
-  id: ImportSource;
-  name: string;
-  description: string;
-  icon: typeof Upload;
-  status: 'available' | 'coming-soon' | 'planned';
-  supportedEntities: ImportEntity[];
+type ImportStep = "upload" | "preview" | "validate" | "results";
+type EntityType = "seller" | "buyer";
+
+interface CSVRow {
+  [key: string]: string;
 }
 
-const IMPORT_OPTIONS: ImportOption[] = [
-  {
-    id: 'csv',
-    name: 'CSV File',
-    description: 'Import from a CSV file with column mapping',
-    icon: FileSpreadsheet,
-    status: 'coming-soon',
-    supportedEntities: ['sellers', 'buyers', 'mandates'],
-  },
-  {
-    id: 'spreadsheet',
-    name: 'Excel / Google Sheets',
-    description: 'Copy-paste from spreadsheets or upload Excel files',
-    icon: FileSpreadsheet,
-    status: 'coming-soon',
-    supportedEntities: ['sellers', 'buyers'],
-  },
-  {
-    id: 'crm',
-    name: 'CRM Export',
-    description: 'Import from HubSpot, Pipedrive, or other CRM exports',
-    icon: Database,
-    status: 'planned',
-    supportedEntities: ['sellers', 'buyers', 'mandates'],
-  },
+interface ColumnMapping {
+  csvColumn: string;
+  dealockField: string | null;
+}
+
+interface ValidationResult {
+  row: number;
+  data: Record<string, unknown>;
+  errors: string[];
+  isValid: boolean;
+  isDuplicateInFile: boolean;
+  isDuplicateInDb: boolean;
+  ignored: boolean;
+}
+
+interface ImportSummary {
+  total: number;
+  valid: number;
+  invalid: number;
+  fileDuplicates: number;
+  dbDuplicates: number;
+  ignored: number;
+  readyToImport: number;
+  imported: number;
+}
+
+// ============================================
+// FIELD DEFINITIONS
+// ============================================
+
+const SELLER_FIELDS = [
+  { key: "owner_name", label: "Seller/Owner Name", required: true, alternateNames: ["name", "contact", "person", "full_name", "contact person", "company_name", "company", "business", "owner", "seller"] },
+  { key: "email", label: "Email", required: false, alternateNames: ["e-mail", "email_address", "mail", "e_mail"] },
+  { key: "phone", label: "Phone", required: false, alternateNames: ["telephone", "tel", "mobile", "cell", "phone_number"] },
+  { key: "property_type", label: "Property Type", required: false, alternateNames: ["type", "property", "asset_type", "asset"] },
+  { key: "city", label: "City/Location", required: false, alternateNames: ["city", "location", "address", "market", "area", "neighborhood"] },
+  { key: "price", label: "Asking Price", required: false, alternateNames: ["asking_price", "price", "value", "amount", "price_eur", "asking price"] },
+  { key: "notes", label: "Notes", required: false, alternateNames: ["description", "note", "comments", "remarks", "details"] },
+  { key: "status", label: "Status", required: false, alternateNames: ["stage", "lead_status", "current_status"] },
 ];
 
-const ENTITY_OPTIONS = [
-  { id: 'sellers' as ImportEntity, name: 'Sellers & Properties', icon: Building2, description: 'Property listings, owners, and listing details' },
-  { id: 'buyers' as ImportEntity, name: 'Buyers', icon: Users, description: 'Buyer profiles and requirements' },
-  { id: 'mandates' as ImportEntity, name: 'Mandates', icon: FileSignature, description: 'Existing exclusivity agreements' },
+const BUYER_FIELDS = [
+  { key: "name", label: "Buyer Name", required: true, alternateNames: ["buyer", "contact", "person", "full_name", "contact_name", "client"] },
+  { key: "email", label: "Email", required: false, alternateNames: ["e-mail", "email_address", "mail", "e_mail"] },
+  { key: "phone", label: "Phone", required: false, alternateNames: ["telephone", "tel", "mobile", "cell", "phone_number"] },
+  { key: "budget_min", label: "Min Budget", required: false, alternateNames: ["min_budget", "budget_from", "price_min", "min price"] },
+  { key: "budget_max", label: "Max Budget", required: false, alternateNames: ["max_budget", "budget_to", "price_max", "budget", "max price"] },
+  { key: "property_types", label: "Property Types", required: false, alternateNames: ["property_type", "types", "looking_for", "property types"] },
+  { key: "target_areas", label: "Target Areas", required: false, alternateNames: ["areas", "locations", "cities", "target_areas", "markets", "target areas"] },
+  { key: "timeline", label: "Timeline", required: false, alternateNames: ["purchase_timeline", "when", "purchase timeline"] },
+  { key: "seriousness", label: "Seriousness", required: false, alternateNames: ["buyer_type", "commitment", "buyer type"] },
+  { key: "pre_approved", label: "Pre-approved", required: false, alternateNames: ["preapproved", "financing", "mortgage", "pre-approved"] },
+  { key: "notes", label: "Notes", required: false, alternateNames: ["description", "note", "comments", "remarks", "criteria"] },
+  { key: "status", label: "Status", required: false, alternateNames: ["stage", "buyer_status", "current_status"] },
 ];
+
+const PROPERTY_TYPE_MAP: Record<string, string> = {
+  apartment: "apartment", apartments: "apartment", residential: "apartment",
+  commercial: "commercial", office: "office", offices: "office",
+  retail: "retail", shop: "retail", shops: "retail",
+  industrial: "industrial", warehouse: "industrial",
+  land: "land", plot: "land",
+};
+
+const SELLER_STATUS_MAP: Record<string, string> = {
+  new: "new", cold: "new", contacted: "contacted", warm: "contacted",
+  qualified: "qualified", hot: "qualified", negotiating: "mandate_proposed",
+  proposal: "mandate_proposed", mandate_proposed: "mandate_proposed",
+  mandate: "mandate_signed", signed: "mandate_signed", lost: "lost", dead: "lost",
+};
+
+const BUYER_STATUS_MAP: Record<string, string> = {
+  new: "new", contacted: "contacted", qualified: "qualified",
+  viewing: "viewing_scheduled", viewing_scheduled: "viewing_scheduled",
+  offer: "offer_pending", offer_pending: "offer_pending", closed: "closed",
+  inactive: "inactive", browsing: "new", serious: "qualified", committed: "qualified",
+};
+
+const TIMELINE_MAP: Record<string, string> = {
+  immediate: "immediate", asap: "immediate", now: "immediate",
+  "1_month": "one_month", "1 month": "one_month", one_month: "one_month", "30_days": "one_month",
+  "3_months": "three_months", "3 months": "three_months", three_months: "three_months", "90_days": "three_months",
+  browsing: "browsing", just_looking: "browsing", flexible: "browsing",
+};
+
+const SERIOUSNESS_MAP: Record<string, string> = {
+  browsing: "low", just_looking: "low", curious: "low",
+  interested: "medium", somewhat: "medium", considering: "medium",
+  serious: "high", motivated: "high", active: "high",
+  committed: "very_high", ready: "very_high", urgent: "very_high", cash_buyer: "very_high",
+};
+
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
+
+function normalizeColumnName(name: string): string {
+  return name.toLowerCase().trim().replace(/\s+/g, "_").replace(/-/g, "_").replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
+}
+
+function normalizePhone(phone: string): string {
+  return phone.replace(/\D/g, "");
+}
+
+function detectColumnMapping(csvColumns: string[], fields: typeof SELLER_FIELDS): ColumnMapping[] {
+  return csvColumns.map((csvCol) => {
+    const normalized = normalizeColumnName(csvCol);
+    let dealockField = fields.find(f => f.key === normalized)?.key || null;
+    if (!dealockField) {
+      for (const field of fields) {
+        if (field.alternateNames.some(alt => normalizeColumnName(alt) === normalized)) {
+          dealockField = field.key;
+          break;
+        }
+      }
+    }
+    return { csvColumn: csvCol, dealockField };
+  });
+}
+
+function validateEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function validatePhone(phone: string): boolean {
+  return phone.replace(/\D/g, "").length >= 6;
+}
+
+function parsePrice(priceStr: string): number | null {
+  if (!priceStr) return null;
+  const cleaned = priceStr.replace(/[€$£,\s]/g, "").replace(/\./g, "");
+  const num = parseInt(cleaned, 10);
+  return isNaN(num) ? null : num;
+}
+
+// ============================================
+// DATABASE DUPLICATE CHECK
+// ============================================
+
+async function checkExistingSeller(email: string, phone: string): Promise<boolean> {
+  if (!email && !phone) return false;
+  const supabase = createClient();
+  
+  if (email) {
+    const { data } = await supabase.from("leads").select("id").eq("email", email).limit(1);
+    if (data && data.length > 0) return true;
+  }
+  
+  if (phone) {
+    const normalizedPhone = normalizePhone(phone);
+    if (normalizedPhone.length >= 6) {
+      const { data } = await supabase.from("leads").select("phone").limit(100);
+      if (data) {
+        for (const row of data as any[]) {
+          if (row?.phone && normalizePhone(row.phone) === normalizedPhone) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+  
+  return false;
+}
+
+async function checkExistingBuyer(email: string, phone: string): Promise<boolean> {
+  if (!email && !phone) return false;
+  const supabase = createClient();
+  
+  if (email) {
+    const { data } = await supabase.from("buyers").select("id").eq("email", email).limit(1);
+    if (data && data.length > 0) return true;
+  }
+  
+  if (phone) {
+    const normalizedPhone = normalizePhone(phone);
+    if (normalizedPhone.length >= 6) {
+      const { data } = await supabase.from("buyers").select("phone").limit(100);
+      if (data) {
+        for (const row of data as any[]) {
+          if (row?.phone && normalizePhone(row.phone) === normalizedPhone) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+  
+  return false;
+}
+
+// ============================================
+// MAIN COMPONENT
+// ============================================
 
 export default function ImportPage() {
+  const { t } = useTranslation();
   const router = useRouter();
-  const [selectedSource, setSelectedSource] = useState<ImportSource>(null);
-  const [selectedEntity, setSelectedEntity] = useState<ImportEntity>(null);
-  const [step, setStep] = useState<'select-source' | 'select-entity' | 'configure'>('select-source');
+  
+  const [entityType, setEntityType] = useState<EntityType>("seller");
+  const [step, setStep] = useState<ImportStep>("upload");
+  const [rawData, setRawData] = useState<CSVRow[]>([]);
+  const [headers, setHeaders] = useState<string[]>([]);
+  const [columnMapping, setColumnMapping] = useState<ColumnMapping[]>([]);
+  const [validationResults, setValidationResults] = useState<ValidationResult[]>([]);
+  const [summary, setSummary] = useState<ImportSummary | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
+  const [fileName, setFileName] = useState<string>("");
+  const [editingCell, setEditingCell] = useState<{rowIndex: number, field: string} | null>(null);
+
+  const fields = entityType === "seller" ? SELLER_FIELDS : BUYER_FIELDS;
+  const nameField = entityType === "seller" ? "owner_name" : "name";
+
+  // ============================================
+  // STEP 1: UPLOAD
+  // ============================================
+
+  const handleFile = useCallback((file: File) => {
+    if (!file.name.endsWith(".csv")) {
+      alert(t.import.errors.csvOnly);
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      alert(t.import.errors.fileTooLarge);
+      return;
+    }
+
+    setFileName(file.name);
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        if (results.data.length > 1000) {
+          alert(t.import.errors.tooManyRows);
+          return;
+        }
+        const data = results.data as CSVRow[];
+        const cols = results.meta.fields || [];
+        setRawData(data);
+        setHeaders(cols);
+        setColumnMapping(detectColumnMapping(cols, fields));
+        setStep("preview");
+      },
+      error: () => alert(t.import.errors.parseFailed),
+    });
+  }, [t, fields]);
+
+  const handleDrag = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(e.type === "dragenter" || e.type === "dragover");
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    if (e.dataTransfer.files?.[0]) handleFile(e.dataTransfer.files[0]);
+  }, [handleFile]);
+
+  // ============================================
+  // STEP 2: PREVIEW & MAPPING
+  // ============================================
+
+  const handleMappingChange = (csvColumn: string, dealockField: string | null) => {
+    setColumnMapping(prev => prev.map(m => m.csvColumn === csvColumn ? { ...m, dealockField } : m));
+  };
+
+  const mappedFields = useMemo(() => columnMapping.filter(m => m.dealockField).map(m => m.dealockField!), [columnMapping]);
+
+  const hasRequiredMapping = useMemo(() => {
+    const hasName = mappedFields.includes(nameField);
+    const hasContact = mappedFields.includes("email") || mappedFields.includes("phone");
+    return hasName && hasContact;
+  }, [mappedFields, nameField]);
+
+  // ============================================
+  // STEP 3: VALIDATE
+  // ============================================
+
+  const validateRow = useCallback(async (data: Record<string, unknown>, seenEmails: Set<string>): Promise<Omit<ValidationResult, 'row' | 'ignored'>> => {
+    const errors: string[] = [];
+    
+    const hasName = !!(data[nameField] as string)?.trim();
+    const hasEmail = !!(data.email as string)?.trim();
+    const hasPhone = !!(data.phone as string)?.trim();
+
+    if (!hasName) errors.push(entityType === "seller" ? "Missing seller name" : "Missing buyer name");
+    if (!hasEmail && !hasPhone) errors.push("Missing email and phone");
+    if (hasEmail && !validateEmail(data.email as string)) errors.push("Invalid email");
+    if (hasPhone && !validatePhone(data.phone as string)) errors.push("Invalid phone");
+
+    const email = (data.email as string)?.toLowerCase();
+    let isDuplicateInFile = false;
+    if (email) {
+      if (seenEmails.has(email)) isDuplicateInFile = true;
+      else seenEmails.add(email);
+    }
+
+    let isDuplicateInDb = false;
+    if (!isDuplicateInFile && (hasEmail || hasPhone)) {
+      const checkFn = entityType === "seller" ? checkExistingSeller : checkExistingBuyer;
+      isDuplicateInDb = await checkFn(data.email as string || "", data.phone as string || "");
+    }
+
+    return {
+      data,
+      errors,
+      isValid: errors.length === 0 && !isDuplicateInFile && !isDuplicateInDb,
+      isDuplicateInFile,
+      isDuplicateInDb,
+    };
+  }, [entityType, nameField]);
+
+  const runValidation = useCallback(async () => {
+    setIsValidating(true);
+    const results: ValidationResult[] = [];
+    const seenEmails = new Set<string>();
+
+    for (let index = 0; index < rawData.length; index++) {
+      const row = rawData[index];
+      const rowNum = index + 2;
+      const data: Record<string, unknown> = {};
+
+      columnMapping.forEach(({ csvColumn, dealockField }) => {
+        if (dealockField && row[csvColumn]) {
+          let value: unknown = row[csvColumn].trim();
+          if (dealockField.includes("budget") || dealockField === "price") {
+            value = parsePrice(value as string);
+          } else if (dealockField === "property_type" || dealockField === "property_types") {
+            value = PROPERTY_TYPE_MAP[(value as string).toLowerCase()] || value;
+          } else if (dealockField === "status") {
+            const statusMap = entityType === "seller" ? SELLER_STATUS_MAP : BUYER_STATUS_MAP;
+            value = statusMap[(value as string).toLowerCase()] || "new";
+          } else if (dealockField === "timeline") {
+            value = TIMELINE_MAP[(value as string).toLowerCase()] || "browsing";
+          } else if (dealockField === "seriousness") {
+            value = SERIOUSNESS_MAP[(value as string).toLowerCase()] || "low";
+          } else if (dealockField === "pre_approved") {
+            value = ["yes", "true", "1", "pre-approved", "approved"].includes((value as string).toLowerCase());
+          }
+          data[dealockField] = value;
+        }
+      });
+
+      const validation = await validateRow(data, seenEmails);
+      results.push({ row: rowNum, ...validation, ignored: false });
+    }
+
+    setValidationResults(results);
+    updateSummary(results);
+    setStep("validate");
+    setIsValidating(false);
+  }, [rawData, columnMapping, entityType, validateRow]);
+
+  const updateSummary = (results: ValidationResult[]) => {
+    const valid = results.filter(r => r.isValid && !r.ignored).length;
+    const ignored = results.filter(r => r.ignored).length;
+    setSummary({
+      total: results.length,
+      valid,
+      invalid: results.filter(r => !r.isValid && !r.isDuplicateInFile && !r.isDuplicateInDb && !r.ignored).length,
+      fileDuplicates: results.filter(r => r.isDuplicateInFile && !r.ignored).length,
+      dbDuplicates: results.filter(r => r.isDuplicateInDb && !r.ignored).length,
+      ignored,
+      readyToImport: valid,
+      imported: 0,
+    });
+  };
+
+  // ============================================
+  // ROW EDITING
+  // ============================================
+
+  const handleCellEdit = (rowIndex: number, field: string, value: string) => {
+    setValidationResults(prev => {
+      const updated = [...prev];
+      updated[rowIndex] = { ...updated[rowIndex], data: { ...updated[rowIndex].data, [field]: value } };
+      // Revalidate immediately after edit
+      setTimeout(() => revalidateRow(rowIndex), 0);
+      return updated;
+    });
+  };
+
+  const revalidateRow = async (rowIndex: number) => {
+    const row = validationResults[rowIndex];
+    const seenEmails = new Set<string>(validationResults
+      .filter((r, i) => i !== rowIndex && r.data.email)
+      .map(r => (r.data.email as string).toLowerCase()));
+    
+    const validation = await validateRow(row.data, seenEmails);
+    
+    setValidationResults(prev => {
+      const updated = [...prev];
+      updated[rowIndex] = { ...updated[rowIndex], ...validation };
+      return updated;
+    });
+    
+    updateSummary(validationResults.map((r, i) => i === rowIndex ? { ...r, ...validation } : r));
+  };
+
+  const toggleIgnoreRow = (rowIndex: number) => {
+    setValidationResults(prev => prev.map((r, i) => i === rowIndex ? { ...r, ignored: !r.ignored } : r));
+  };
+  
+  // Derive summary from validationResults - ensures consistency
+  useEffect(() => {
+    if (step === 'validate' && validationResults.length > 0) {
+      const ignoredCount = validationResults.filter(r => r.ignored).length;
+      const valid = validationResults.filter(r => r.isValid && !r.ignored).length;
+
+      setSummary({
+        total: validationResults.length,
+        valid,
+        invalid: validationResults.filter(r => !r.isValid && !r.isDuplicateInFile && !r.isDuplicateInDb && !r.ignored).length,
+        fileDuplicates: validationResults.filter(r => r.isDuplicateInFile && !r.ignored).length,
+        dbDuplicates: validationResults.filter(r => r.isDuplicateInDb && !r.ignored).length,
+        ignored: ignoredCount,
+        readyToImport: valid,
+        imported: summary?.imported || 0,
+      });
+    }
+  }, [validationResults, step]);
+
+  // ============================================
+  // STEP 4: IMPORT
+  // ============================================
+
+  const executeImport = useCallback(async () => {
+    setIsImporting(true);
+    let imported = 0;
+    const validRows = validationResults.filter(r => r.isValid && !r.ignored);
+
+    for (const result of validRows) {
+      try {
+        if (entityType === "seller") {
+          await createLead({
+            owner_name: (result.data.owner_name as string) || "Unknown",
+            email: (result.data.email as string) || "",
+            phone: (result.data.phone as string) || "",
+            property_type: (result.data.property_type as string) || "apartment",
+            city: (result.data.city as string) || "",
+            neighborhood: "",
+            price: (result.data.price as number) || 0,
+            notes: (result.data.notes as string) || null,
+            status: (result.data.status as string) || "new",
+            source: "csv_import",
+            listing_url: null,
+            whatsapp_status: "not_sent",
+            seller_type: "owner",
+            language_preference: "en",
+            area_m2: null,
+            bedrooms: null,
+          } as any);
+        } else {
+          const supabase = createClient();
+          await supabase.from("buyers").insert({
+            name: (result.data.name as string) || "Unknown",
+            email: (result.data.email as string) || null,
+            phone: (result.data.phone as string) || null,
+            budget_min: (result.data.budget_min as number) || 0,
+            budget_max: (result.data.budget_max as number) || 0,
+            property_types: result.data.property_types ? [(result.data.property_types as string)] : [],
+            target_areas: result.data.target_areas ? [(result.data.target_areas as string)] : [],
+            timeline: (result.data.timeline as string) || "browsing",
+            seriousness: (result.data.seriousness as string) || "low",
+            pre_approved: (result.data.pre_approved as boolean) || false,
+            notes: (result.data.notes as string) || null,
+            status: (result.data.status as string) || "new",
+          } as any);
+        }
+        imported++;
+      } catch (err) {
+        console.error("Import error for row", result.row, err);
+      }
+    }
+
+    setSummary(prev => prev ? { ...prev, imported } : null);
+    setStep("results");
+    setIsImporting(false);
+  }, [validationResults, entityType]);
+
+  // ============================================
+  // DOWNLOAD ERROR REPORT
+  // ============================================
+
+  const downloadErrorReport = useCallback(() => {
+    const problematicRows = validationResults.filter(r => !r.isValid || r.isDuplicateInFile || r.isDuplicateInDb);
+    if (problematicRows.length === 0) return;
+
+    const csv = Papa.unparse(problematicRows.map(r => ({
+      row: r.row,
+      ...r.data,
+      errors: r.errors.join("; ") + (r.isDuplicateInFile ? " [Duplicate in file]" : "") + (r.isDuplicateInDb ? " [Already in database]" : ""),
+    })));
+
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "import-report.csv";
+    a.click();
+    window.URL.revokeObjectURL(url);
+  }, [validationResults]);
+
+  // ============================================
+  // STATUS BADGE HELPER
+  // ============================================
+
+  const getStatusBadge = (result: ValidationResult) => {
+    if (result.ignored) return <Badge variant="secondary" className="text-xs">Ignored</Badge>;
+    if (result.isDuplicateInDb) return <Badge className="text-xs bg-purple-500/20 text-purple-400 border-purple-500/30">In DB</Badge>;
+    if (result.isDuplicateInFile) return <Badge className="text-xs bg-blue-500/20 text-blue-400 border-blue-500/30">In File</Badge>;
+    if (!result.isValid) return <Badge className="text-xs bg-amber-500/20 text-amber-400 border-amber-500/30">Invalid</Badge>;
+    return <Badge className="text-xs bg-green-500/20 text-green-400 border-green-500/30">Ready</Badge>;
+  };
+
+  // ============================================
+  // RENDER
+  // ============================================
 
   return (
-    <div className="min-h-screen bg-[#0d0d0f]">
-      {/* Header */}
-      <div className="border-b border-white/[0.06]">
-        <div className="max-w-4xl mx-auto px-6 py-6">
-          <div className="flex items-center gap-4">
-            <Button 
-              variant="ghost" 
-              size="sm"
-              onClick={() => router.back()}
-            >
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back
-            </Button>
-            <div>
-              <h1 className="text-xl font-semibold">Import Data</h1>
-              <p className="text-sm text-white/50">Migrate your existing data into Dealock</p>
-            </div>
+    <div className="max-w-5xl mx-auto space-y-8">
+      {/* HEADER */}
+      <section className="pb-6 border-b border-white/[0.06]">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-semibold tracking-tight">{t.import.title}</h1>
+            <p className="text-white/50 mt-2">{t.import.subtitle}</p>
           </div>
+          <Badge variant="secondary" className="text-xs">{t.import.phaseLabel}</Badge>
         </div>
+      </section>
+
+      {/* ENTITY TYPE SELECTOR */}
+      {step === "upload" && (
+        <div className="flex gap-4">
+          <button onClick={() => setEntityType("seller")} className={`flex-1 p-6 rounded-xl border-2 text-left transition-colors ${entityType === "seller" ? "border-white bg-white/5" : "border-white/10 hover:border-white/30"}`}>
+            <Building2 className={`w-8 h-8 mb-3 ${entityType === "seller" ? "text-white" : "text-white/50"}`} />
+            <h3 className="font-medium">Import Sellers</h3>
+            <p className="text-sm text-white/50 mt-1">Import property owners and seller leads</p>
+          </button>
+          <button onClick={() => setEntityType("buyer")} className={`flex-1 p-6 rounded-xl border-2 text-left transition-colors ${entityType === "buyer" ? "border-white bg-white/5" : "border-white/10 hover:border-white/30"}`}>
+            <UserCircle className={`w-8 h-8 mb-3 ${entityType === "buyer" ? "text-white" : "text-white/50"}`} />
+            <h3 className="font-medium">Import Buyers</h3>
+            <p className="text-sm text-white/50 mt-1">Import buyer prospects and investors</p>
+          </button>
+        </div>
+      )}
+
+      {/* PROGRESS STEPS */}
+      <div className="flex items-center gap-4 text-sm">
+        {["upload", "preview", "validate", "results"].map((s, i) => (
+          <div key={s} className="flex items-center gap-2">
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step === s ? "bg-white text-black" : i < ["upload", "preview", "validate", "results"].indexOf(step) ? "bg-green-500/20 text-green-400" : "bg-white/5 text-white/30"}`}>
+              {i < ["upload", "preview", "validate", "results"].indexOf(step) ? <CheckCircle className="w-4 h-4" /> : i + 1}
+            </div>
+            <span className={step === s ? "text-white" : "text-white/40"}>{t.import.steps[s as keyof typeof t.import.steps]}</span>
+            {i < 3 && <ChevronRight className="w-4 h-4 text-white/20 ml-2" />}
+          </div>
+        ))}
       </div>
 
-      {/* Content */}
-      <div className="max-w-4xl mx-auto px-6 py-12">
-        {/* Progress */}
-        <div className="flex items-center gap-2 mb-8">
-          <div className={`h-2 flex-1 rounded-full ${step === 'select-source' ? 'bg-emerald-500' : 'bg-emerald-500/30'}`} />
-          <div className={`h-2 flex-1 rounded-full ${step === 'select-entity' ? 'bg-emerald-500' : step === 'configure' ? 'bg-emerald-500/30' : 'bg-white/[0.06]'}`} />
-          <div className={`h-2 flex-1 rounded-full ${step === 'configure' ? 'bg-emerald-500' : 'bg-white/[0.06]'}`} />
-        </div>
-
-        {/* Step 1: Select Source */}
-        {step === 'select-source' && (
-          <div className="space-y-6">
-            <div>
-              <h2 className="text-2xl font-semibold mb-2">Choose Import Source</h2>
-              <p className="text-white/60">
-                Select where your data is coming from. More options coming soon.
-              </p>
+      {/* STEP 1: UPLOAD */}
+      {step === "upload" && (
+        <Card className="p-12">
+          <div onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop} className={`border-2 border-dashed rounded-xl p-12 text-center transition-colors ${dragActive ? "border-white bg-white/5" : "border-white/10 hover:border-white/30"}`}>
+            <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mx-auto mb-6">
+              <Upload className="w-8 h-8 text-white/50" />
             </div>
+            <h3 className="text-xl font-medium mb-2">{t.import.upload.title}</h3>
+            <p className="text-white/50 mb-6 max-w-md mx-auto">{t.import.upload.description}</p>
+            <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-white/20 hover:border-white/40 hover:bg-white/5 transition-colors">
+              <input type="file" accept=".csv" onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} className="hidden" />
+              <FileSpreadsheet className="w-4 h-4" />
+              {t.import.upload.selectFile}
+            </label>
+            <p className="text-xs text-white/30 mt-6">{t.import.upload.limits}</p>
+          </div>
 
-            <div className="grid gap-4">
-              {IMPORT_OPTIONS.map((option) => (
-                <button
-                  key={option.id}
-                  onClick={() => setSelectedSource(option.id)}
-                  className={`flex items-start gap-4 p-5 rounded-xl border text-left transition-all ${
-                    selectedSource === option.id
-                      ? 'border-emerald-500/50 bg-emerald-500/10'
-                      : 'border-white/[0.06] hover:border-white/10 bg-white/[0.02]'
-                  }`}
-                >
-                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
-                    option.status === 'available' ? 'bg-emerald-500/10' : 'bg-white/[0.06]'
-                  }`}>
-                    <option.icon className={`w-6 h-6 ${
-                      option.status === 'available' ? 'text-emerald-400' : 'text-white/40'
-                    }`} />
-                  </div>
-                  
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-1">
-                      <h3 className="font-medium">{option.name}</h3>
-                      {option.status === 'coming-soon' && (
-                        <span className="px-2 py-0.5 rounded-full text-xs bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                          Coming Soon
-                        </span>
-                      )}
-                      {option.status === 'planned' && (
-                        <span className="px-2 py-0.5 rounded-full text-xs bg-white/[0.06] text-white/40 border border-white/[0.06]">
-                          Planned
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-sm text-white/50 mb-2">{option.description}</p>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-white/40">Supports:</span>
-                      {option.supportedEntities.map(entity => (
-                        <span key={entity} className="text-xs px-2 py-0.5 rounded-full bg-white/[0.04] text-white/60">
-                          {entity}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
+          <div className="mt-8 grid md:grid-cols-2 gap-6">
+            <div className="p-4 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+              <h4 className="font-medium mb-3 flex items-center gap-2"><Building2 className="w-4 h-4 text-white/50" />{t.import.template.required}</h4>
+              <p className="text-sm text-white/50 mb-3">{t.import.template.requiredDesc}</p>
+              <div className="flex flex-wrap gap-2">
+                <code className="text-xs bg-white/5 px-2 py-1 rounded">{nameField}</code>
+                <span className="text-xs text-white/30">+</span>
+                <code className="text-xs bg-white/5 px-2 py-1 rounded">email</code>
+                <span className="text-xs text-white/30">or</span>
+                <code className="text-xs bg-white/5 px-2 py-1 rounded">phone</code>
+              </div>
+            </div>
+            <div className="p-4 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+              <h4 className="font-medium mb-3 flex items-center gap-2"><Users className="w-4 h-4 text-white/50" />{t.import.template.optional}</h4>
+              <p className="text-sm text-white/50 mb-3">{t.import.template.optionalDesc}</p>
+              <div className="flex flex-wrap gap-2">
+                {entityType === "seller" ? (
+                  <><code className="text-xs bg-white/5 px-2 py-1 rounded">property_type</code><code className="text-xs bg-white/5 px-2 py-1 rounded">city</code><code className="text-xs bg-white/5 px-2 py-1 rounded">price</code></>
+                ) : (
+                  <><code className="text-xs bg-white/5 px-2 py-1 rounded">budget_max</code><code className="text-xs bg-white/5 px-2 py-1 rounded">target_areas</code><code className="text-xs bg-white/5 px-2 py-1 rounded">timeline</code></>
+                )}
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
 
-                  {selectedSource === option.id && (
-                    <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-                  )}
-                </button>
+      {/* STEP 2: PREVIEW */}
+      {step === "preview" && (
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h3 className="text-lg font-medium">{t.import.preview.title}</h3>
+              <p className="text-sm text-white/50">{fileName} • {rawData.length} {t.import.preview.rows}</p>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => setStep("upload")}><X className="w-4 h-4 mr-2" />{t.common.cancel}</Button>
+          </div>
+
+          <div className="mb-6">
+            <h4 className="text-sm font-medium mb-3">{t.import.preview.mapping}</h4>
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {columnMapping.map(({ csvColumn, dealockField }) => (
+                <div key={csvColumn} className="flex items-center gap-3 p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+                  <span className="text-sm text-white/70 truncate flex-1" title={csvColumn}>{csvColumn}</span>
+                  <ChevronRight className="w-4 h-4 text-white/20" />
+                  <select value={dealockField || ""} onChange={(e) => handleMappingChange(csvColumn, e.target.value || null)} className="text-sm bg-black border border-white/10 rounded px-2 py-1">
+                    <option value="">{t.import.preview.ignore}</option>
+                    {fields.map((field) => <option key={field.key} value={field.key}>{field.label}{field.required ? " *" : ""}</option>)}
+                  </select>
+                </div>
               ))}
             </div>
+          </div>
 
-            <div className="flex justify-end pt-4">
-              <Button
-                size="lg"
-                disabled={!selectedSource}
-                onClick={() => setStep('select-entity')}
-                className="bg-white text-black hover:bg-white/90"
-              >
-                Continue
-                <ArrowRight className="w-4 h-4 ml-2" />
+          <div className="mb-6">
+            <h4 className="text-sm font-medium mb-3">{t.import.preview.dataPreview}</h4>
+            <div className="overflow-x-auto rounded-lg border border-white/[0.06]">
+              <table className="w-full text-sm">
+                <thead className="bg-white/[0.02]">
+                  <tr>{headers.map((h) => <th key={h} className="px-3 py-2 text-left text-white/50 font-normal whitespace-nowrap">{h}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {rawData.slice(0, 5).map((row, i) => <tr key={i} className="border-t border-white/[0.06]">{headers.map((h) => <td key={h} className="px-3 py-2 text-white/70 truncate max-w-[200px]">{row[h] || "—"}</td>)}</tr>)}
+                </tbody>
+              </table>
+            </div>
+            {rawData.length > 5 && <p className="text-xs text-white/30 mt-2">{t.import.preview.showingFirst.replace("{{count}}", "5").replace("{{total}}", String(rawData.length))}</p>}
+          </div>
+
+          {!hasRequiredMapping && (
+            <div className="flex items-start gap-3 p-4 rounded-lg bg-amber-500/10 border border-amber-500/20 mb-6">
+              <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm text-amber-200">{t.import.preview.missingRequired}</p>
+                <p className="text-xs text-amber-200/60 mt-1">{t.import.preview.missingRequiredDesc}</p>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between">
+            <Button variant="outline" onClick={() => setStep("upload")}><ChevronLeft className="w-4 h-4 mr-2" />{t.common.back}</Button>
+            <Button onClick={runValidation} disabled={!hasRequiredMapping || isValidating}>
+              {isValidating ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Checking database...</> : <>{t.import.preview.validate}<ChevronRight className="w-4 h-4 ml-2" /></>}
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {/* STEP 3: VALIDATE & REVIEW */}
+      {step === "validate" && summary && (
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h3 className="text-lg font-medium">{t.import.validate.title}</h3>
+              <p className="text-sm text-white/50">{summary.readyToImport} rows ready to import • {summary.ignored} ignored</p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => validationResults.forEach((r, i) => !r.isValid && toggleIgnoreRow(i))}>
+                <EyeOff className="w-4 h-4 mr-2" />Ignore All Invalid
+              </Button>
+              <Button variant="outline" size="sm" onClick={downloadErrorReport}>
+                <Download className="w-4 h-4 mr-2" />Export
               </Button>
             </div>
           </div>
-        )}
-      </div>
+
+          {/* SUMMARY CARDS */}
+          <div className="grid grid-cols-6 gap-3 mb-6">
+            <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] text-center"><p className="text-xl font-semibold">{summary.total}</p><p className="text-xs text-white/50">Total</p></div>
+            <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-center"><p className="text-xl font-semibold text-green-400">{summary.readyToImport}</p><p className="text-xs text-green-400/70">Ready</p></div>
+            <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-center"><p className="text-xl font-semibold text-amber-400">{summary.invalid}</p><p className="text-xs text-amber-400/70">Invalid</p></div>
+            <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-center"><p className="text-xl font-semibold text-blue-400">{summary.fileDuplicates}</p><p className="text-xs text-blue-400/70">In File</p></div>
+            <div className="p-3 rounded-lg bg-purple-500/10 border border-purple-500/20 text-center"><p className="text-xl font-semibold text-purple-400">{summary.dbDuplicates}</p><p className="text-xs text-purple-400/70">In DB</p></div>
+            <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] text-center"><p className="text-xl font-semibold text-white/60">{summary.ignored}</p><p className="text-xs text-white/50">Ignored</p></div>
+          </div>
+
+          {/* REVIEW TABLE */}
+          <div className="mb-6">
+            <h4 className="text-sm font-medium mb-3 flex items-center gap-2"><Edit2 className="w-4 h-4" />Review & Edit</h4>
+            <div className="max-h-96 overflow-y-auto rounded-lg border border-white/[0.06]">
+              <table className="w-full text-sm">
+                <thead className="bg-white/[0.02] sticky top-0">
+                  <tr>
+                    <th className="px-2 py-2 text-left text-white/50 font-normal w-16">Row</th>
+                    <th className="px-2 py-2 text-left text-white/50 font-normal">Name</th>
+                    <th className="px-2 py-2 text-left text-white/50 font-normal">Email</th>
+                    <th className="px-2 py-2 text-left text-white/50 font-normal">Phone</th>
+                    <th className="px-2 py-2 text-left text-white/50 font-normal">Status</th>
+                    <th className="px-2 py-2 text-left text-white/50 font-normal">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {validationResults.map((result, index) => (
+                    <tr key={index} className={`border-t border-white/[0.06] ${result.ignored ? 'opacity-50' : ''}`}>
+                      <td className="px-2 py-2 text-white/50">{result.row}</td>
+                      <td className="px-2 py-2" onClick={() => editingCell?.rowIndex !== index && setEditingCell({rowIndex: index, field: nameField})}>
+                        {editingCell?.rowIndex === index && editingCell.field === nameField ? (
+                          <input
+                            type="text"
+                            defaultValue={(result.data[nameField] as string) || ''}
+                            onBlur={(e) => { handleCellEdit(index, nameField, e.target.value); setEditingCell(null); }}
+                            onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                            className="w-full bg-black border border-white/20 rounded px-2 py-1 text-sm"
+                            autoFocus
+                          />
+                        ) : (
+                          <span 
+                            className="cursor-pointer hover:text-white text-white/70 border-b border-dashed border-white/20"
+                          >
+                            {(result.data[nameField] as string) || <span className="text-amber-400 italic">empty</span>}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-2 py-2" onClick={() => editingCell?.rowIndex !== index && setEditingCell({rowIndex: index, field: 'email'})}>
+                        {editingCell?.rowIndex === index && editingCell.field === 'email' ? (
+                          <input
+                            type="text"
+                            defaultValue={(result.data.email as string) || ''}
+                            onBlur={(e) => { handleCellEdit(index, 'email', e.target.value); setEditingCell(null); }}
+                            onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                            className="w-full bg-black border border-white/20 rounded px-2 py-1 text-sm"
+                            autoFocus
+                          />
+                        ) : (
+                          <span 
+                            className={`cursor-pointer hover:text-white border-b border-dashed border-white/20 ${result.errors.some(e => e.includes('email')) ? 'text-amber-400' : 'text-white/70'}`}
+                          >
+                            {(result.data.email as string) || <span className="text-white/30">—</span>}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-2 py-2" onClick={() => editingCell?.rowIndex !== index && setEditingCell({rowIndex: index, field: 'phone'})}>
+                        {editingCell?.rowIndex === index && editingCell.field === 'phone' ? (
+                          <input
+                            type="text"
+                            defaultValue={(result.data.phone as string) || ''}
+                            onBlur={(e) => { handleCellEdit(index, 'phone', e.target.value); setEditingCell(null); }}
+                            onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                            className="w-full bg-black border border-white/20 rounded px-2 py-1 text-sm"
+                            autoFocus
+                          />
+                        ) : (
+                          <span 
+                            className={`cursor-pointer hover:text-white border-b border-dashed border-white/20 ${result.errors.some(e => e.includes('phone')) ? 'text-amber-400' : 'text-white/70'}`}
+                          >
+                            {(result.data.phone as string) || <span className="text-white/30">—</span>}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-2 py-2">{getStatusBadge(result)}</td>
+                      <td className="px-2 py-2">
+                        <div className="flex gap-1">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => toggleIgnoreRow(index)}
+                            className={result.ignored ? 'text-amber-400' : ''}
+                          >
+                            {result.ignored ? <><Eye className="w-3 h-3 mr-1" />Keep</> : <><EyeOff className="w-3 h-3 mr-1" />Ignore</>}
+                          </Button>
+                          {!result.isValid && !result.ignored && (
+                            <Button variant="ghost" size="sm" onClick={() => revalidateRow(index)}>
+                              <RefreshCw className="w-3 h-3 mr-1" />Check
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <Button variant="outline" onClick={() => setStep("preview")}><ChevronLeft className="w-4 h-4 mr-2" />{t.common.back}</Button>
+            <Button onClick={executeImport} disabled={summary.readyToImport === 0 || isImporting}>
+              {isImporting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />{t.import.validate.importing}</> : <><FileCheck className="w-4 h-4 mr-2" />{t.import.validate.import.replace("{{count}}", String(summary.readyToImport))}</>}
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {/* STEP 4: RESULTS */}
+      {step === "results" && summary && (
+        <Card className="p-12 text-center">
+          <div className="w-20 h-20 rounded-full bg-green-500/10 flex items-center justify-center mx-auto mb-6">
+            <CheckCircle className="w-10 h-10 text-green-400" />
+          </div>
+          <h3 className="text-2xl font-semibold mb-2">{t.import.results.success}</h3>
+          <p className="text-white/50 mb-8">{t.import.results.imported.replace("{{count}}", String(summary.imported))}</p>
+
+          <div className="grid grid-cols-4 gap-4 max-w-lg mx-auto mb-8">
+            <div className="p-4 rounded-lg bg-white/[0.02]"><p className="text-2xl font-semibold text-green-400">{summary.imported}</p><p className="text-xs text-white/50">Imported</p></div>
+            <div className="p-4 rounded-lg bg-white/[0.02]"><p className="text-2xl font-semibold text-amber-400">{summary.ignored}</p><p className="text-xs text-white/50">Ignored</p></div>
+            <div className="p-4 rounded-lg bg-white/[0.02]"><p className="text-2xl font-semibold text-blue-400">{summary.fileDuplicates}</p><p className="text-xs text-white/50">In File</p></div>
+            <div className="p-4 rounded-lg bg-white/[0.02]"><p className="text-2xl font-semibold text-purple-400">{summary.dbDuplicates}</p><p className="text-xs text-white/50">In DB</p></div>
+          </div>
+
+          <div className="flex items-center justify-center gap-4">
+            <Button variant="outline" onClick={() => setStep("upload")}>{t.import.results.importMore}</Button>
+            <Button onClick={() => router.push(entityType === "seller" ? "/sellers" : "/buyers")}>View {entityType === "seller" ? "Sellers" : "Buyers"}</Button>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
