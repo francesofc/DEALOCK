@@ -37,6 +37,7 @@ import { createClient } from "@/lib/supabase/client";
 
 type ImportStep = "upload" | "preview" | "validate" | "results";
 type EntityType = "seller" | "buyer";
+type FilterType = "all" | "ready" | "invalid" | "inFile" | "inDb" | "ignored";
 
 interface CSVRow {
   [key: string]: string;
@@ -54,6 +55,7 @@ interface ValidationResult {
   isValid: boolean;
   isDuplicateInFile: boolean;
   isDuplicateInDb: boolean;
+  duplicateField?: 'email' | 'phone' | 'both';
   ignored: boolean;
 }
 
@@ -181,13 +183,16 @@ function parsePrice(priceStr: string): number | null {
 // DATABASE DUPLICATE CHECK
 // ============================================
 
-async function checkExistingSeller(email: string, phone: string): Promise<boolean> {
-  if (!email && !phone) return false;
+async function checkExistingSeller(email: string, phone: string): Promise<{ exists: boolean; field?: 'email' | 'phone' | 'both' }> {
+  if (!email && !phone) return { exists: false };
   const supabase = createClient();
+  
+  let emailMatch = false;
+  let phoneMatch = false;
   
   if (email) {
     const { data } = await supabase.from("leads").select("id").eq("email", email).limit(1);
-    if (data && data.length > 0) return true;
+    if (data && data.length > 0) emailMatch = true;
   }
   
   if (phone) {
@@ -197,23 +202,30 @@ async function checkExistingSeller(email: string, phone: string): Promise<boolea
       if (data) {
         for (const row of data as any[]) {
           if (row?.phone && normalizePhone(row.phone) === normalizedPhone) {
-            return true;
+            phoneMatch = true;
+            break;
           }
         }
       }
     }
   }
   
-  return false;
+  if (emailMatch && phoneMatch) return { exists: true, field: 'both' };
+  if (emailMatch) return { exists: true, field: 'email' };
+  if (phoneMatch) return { exists: true, field: 'phone' };
+  return { exists: false };
 }
 
-async function checkExistingBuyer(email: string, phone: string): Promise<boolean> {
-  if (!email && !phone) return false;
+async function checkExistingBuyer(email: string, phone: string): Promise<{ exists: boolean; field?: 'email' | 'phone' | 'both' }> {
+  if (!email && !phone) return { exists: false };
   const supabase = createClient();
+  
+  let emailMatch = false;
+  let phoneMatch = false;
   
   if (email) {
     const { data } = await supabase.from("buyers").select("id").eq("email", email).limit(1);
-    if (data && data.length > 0) return true;
+    if (data && data.length > 0) emailMatch = true;
   }
   
   if (phone) {
@@ -223,14 +235,18 @@ async function checkExistingBuyer(email: string, phone: string): Promise<boolean
       if (data) {
         for (const row of data as any[]) {
           if (row?.phone && normalizePhone(row.phone) === normalizedPhone) {
-            return true;
+            phoneMatch = true;
+            break;
           }
         }
       }
     }
   }
   
-  return false;
+  if (emailMatch && phoneMatch) return { exists: true, field: 'both' };
+  if (emailMatch) return { exists: true, field: 'email' };
+  if (phoneMatch) return { exists: true, field: 'phone' };
+  return { exists: false };
 }
 
 // ============================================
@@ -253,9 +269,26 @@ export default function ImportPage() {
   const [dragActive, setDragActive] = useState(false);
   const [fileName, setFileName] = useState<string>("");
   const [editingCell, setEditingCell] = useState<{rowIndex: number, field: string} | null>(null);
+  const [filter, setFilter] = useState<FilterType>("all");
+  const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
 
   const fields = entityType === "seller" ? SELLER_FIELDS : BUYER_FIELDS;
   const nameField = entityType === "seller" ? "owner_name" : "name";
+
+  // Filtered results based on current filter
+  const filteredResults = useMemo(() => {
+    if (filter === "all") return validationResults;
+    return validationResults.filter(r => {
+      switch (filter) {
+        case "ready": return r.isValid && !r.isDuplicateInFile && !r.isDuplicateInDb && !r.ignored;
+        case "invalid": return !r.isValid && !r.ignored;
+        case "inFile": return r.isDuplicateInFile && !r.ignored;
+        case "inDb": return r.isDuplicateInDb && !r.ignored;
+        case "ignored": return r.ignored;
+        default: return true;
+      }
+    });
+  }, [validationResults, filter]);
 
   // ============================================
   // STEP 1: UPLOAD
@@ -338,15 +371,25 @@ export default function ImportPage() {
 
     const email = (data.email as string)?.toLowerCase();
     let isDuplicateInFile = false;
+    let fileDuplicateField: 'email' | 'phone' | 'both' | undefined;
+    
     if (email) {
-      if (seenEmails.has(email)) isDuplicateInFile = true;
-      else seenEmails.add(email);
+      if (seenEmails.has(email)) {
+        isDuplicateInFile = true;
+        fileDuplicateField = 'email';
+      } else {
+        seenEmails.add(email);
+      }
     }
 
     let isDuplicateInDb = false;
+    let dbDuplicateField: 'email' | 'phone' | 'both' | undefined;
+    
     if (!isDuplicateInFile && (hasEmail || hasPhone)) {
       const checkFn = entityType === "seller" ? checkExistingSeller : checkExistingBuyer;
-      isDuplicateInDb = await checkFn(data.email as string || "", data.phone as string || "");
+      const result = await checkFn(data.email as string || "", data.phone as string || "");
+      isDuplicateInDb = result.exists;
+      dbDuplicateField = result.field;
     }
 
     return {
@@ -355,6 +398,7 @@ export default function ImportPage() {
       isValid: errors.length === 0 && !isDuplicateInFile && !isDuplicateInDb,
       isDuplicateInFile,
       isDuplicateInDb,
+      duplicateField: isDuplicateInDb ? dbDuplicateField : isDuplicateInFile ? fileDuplicateField : undefined,
     };
   }, [entityType, nameField]);
 
@@ -447,6 +491,67 @@ export default function ImportPage() {
 
   const toggleIgnoreRow = (rowIndex: number) => {
     setValidationResults(prev => prev.map((r, i) => i === rowIndex ? { ...r, ignored: !r.ignored } : r));
+  };
+
+  // Batch actions
+  const ignoreAllInvalid = () => {
+    setValidationResults(prev => prev.map(r => 
+      (!r.isValid && !r.isDuplicateInFile && !r.isDuplicateInDb) ? { ...r, ignored: true } : r
+    ));
+    setSelectedRows(new Set());
+  };
+
+  const ignoreAllDbDuplicates = () => {
+    setValidationResults(prev => prev.map(r => 
+      r.isDuplicateInDb ? { ...r, ignored: true } : r
+    ));
+    setSelectedRows(new Set());
+  };
+
+  const ignoreAllFileDuplicates = () => {
+    setValidationResults(prev => prev.map(r => 
+      r.isDuplicateInFile ? { ...r, ignored: true } : r
+    ));
+    setSelectedRows(new Set());
+  };
+
+  const keepAll = () => {
+    setValidationResults(prev => prev.map(r => ({ ...r, ignored: false })));
+    setSelectedRows(new Set());
+  };
+
+  const toggleSelectAll = () => {
+    const visibleIndices = filteredResults.map(r => validationResults.indexOf(r));
+    const allSelected = visibleIndices.every(i => selectedRows.has(i));
+    
+    if (allSelected) {
+      // Deselect all visible
+      const newSelected = new Set(selectedRows);
+      visibleIndices.forEach(i => newSelected.delete(i));
+      setSelectedRows(newSelected);
+    } else {
+      // Select all visible
+      const newSelected = new Set(selectedRows);
+      visibleIndices.forEach(i => newSelected.add(i));
+      setSelectedRows(newSelected);
+    }
+  };
+
+  const toggleSelectRow = (rowIndex: number) => {
+    const newSelected = new Set(selectedRows);
+    if (newSelected.has(rowIndex)) {
+      newSelected.delete(rowIndex);
+    } else {
+      newSelected.add(rowIndex);
+    }
+    setSelectedRows(newSelected);
+  };
+
+  const ignoreSelected = () => {
+    setValidationResults(prev => prev.map((r, i) => 
+      selectedRows.has(i) ? { ...r, ignored: true } : r
+    ));
+    setSelectedRows(new Set());
   };
   
   // Derive summary from validationResults - ensures consistency
@@ -555,8 +660,14 @@ export default function ImportPage() {
 
   const getStatusBadge = (result: ValidationResult) => {
     if (result.ignored) return <Badge variant="secondary" className="text-xs">Ignored</Badge>;
-    if (result.isDuplicateInDb) return <Badge className="text-xs bg-purple-500/20 text-purple-400 border-purple-500/30">In DB</Badge>;
-    if (result.isDuplicateInFile) return <Badge className="text-xs bg-blue-500/20 text-blue-400 border-blue-500/30">In File</Badge>;
+    if (result.isDuplicateInDb) {
+      const fieldLabel = result.duplicateField === 'email' ? ' (email)' : result.duplicateField === 'phone' ? ' (phone)' : result.duplicateField === 'both' ? ' (email+phone)' : '';
+      return <Badge className="text-xs bg-purple-500/20 text-purple-400 border-purple-500/30">In DB{fieldLabel}</Badge>;
+    }
+    if (result.isDuplicateInFile) {
+      const fieldLabel = result.duplicateField === 'email' ? ' (email)' : result.duplicateField === 'phone' ? ' (phone)' : result.duplicateField === 'both' ? ' (email+phone)' : '';
+      return <Badge className="text-xs bg-blue-500/20 text-blue-400 border-blue-500/30">In File{fieldLabel}</Badge>;
+    }
     if (!result.isValid) return <Badge className="text-xs bg-amber-500/20 text-amber-400 border-amber-500/30">Invalid</Badge>;
     return <Badge className="text-xs bg-green-500/20 text-green-400 border-green-500/30">Ready</Badge>;
   };
@@ -721,9 +832,6 @@ export default function ImportPage() {
               <p className="text-sm text-white/50">{summary.readyToImport} rows ready to import • {summary.ignored} ignored</p>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => validationResults.forEach((r, i) => !r.isValid && toggleIgnoreRow(i))}>
-                <EyeOff className="w-4 h-4 mr-2" />Ignore All Invalid
-              </Button>
               <Button variant="outline" size="sm" onClick={downloadErrorReport}>
                 <Download className="w-4 h-4 mr-2" />Export
               </Button>
@@ -732,22 +840,76 @@ export default function ImportPage() {
 
           {/* SUMMARY CARDS */}
           <div className="grid grid-cols-6 gap-3 mb-6">
-            <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] text-center"><p className="text-xl font-semibold">{summary.total}</p><p className="text-xs text-white/50">Total</p></div>
-            <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-center"><p className="text-xl font-semibold text-green-400">{summary.readyToImport}</p><p className="text-xs text-green-400/70">Ready</p></div>
-            <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-center"><p className="text-xl font-semibold text-amber-400">{summary.invalid}</p><p className="text-xs text-amber-400/70">Invalid</p></div>
-            <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-center"><p className="text-xl font-semibold text-blue-400">{summary.fileDuplicates}</p><p className="text-xs text-blue-400/70">In File</p></div>
-            <div className="p-3 rounded-lg bg-purple-500/10 border border-purple-500/20 text-center"><p className="text-xl font-semibold text-purple-400">{summary.dbDuplicates}</p><p className="text-xs text-purple-400/70">In DB</p></div>
-            <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] text-center"><p className="text-xl font-semibold text-white/60">{summary.ignored}</p><p className="text-xs text-white/50">Ignored</p></div>
+            <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] text-center cursor-pointer hover:bg-white/[0.04] transition-colors" onClick={() => setFilter('all')}><p className="text-xl font-semibold">{summary.total}</p><p className="text-xs text-white/50">Total</p></div>
+            <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-center cursor-pointer hover:bg-green-500/15 transition-colors" onClick={() => setFilter('ready')}><p className="text-xl font-semibold text-green-400">{summary.readyToImport}</p><p className="text-xs text-green-400/70">Ready</p></div>
+            <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-center cursor-pointer hover:bg-amber-500/15 transition-colors" onClick={() => setFilter('invalid')}><p className="text-xl font-semibold text-amber-400">{summary.invalid}</p><p className="text-xs text-amber-400/70">Invalid</p></div>
+            <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-center cursor-pointer hover:bg-blue-500/15 transition-colors" onClick={() => setFilter('inFile')}><p className="text-xl font-semibold text-blue-400">{summary.fileDuplicates}</p><p className="text-xs text-blue-400/70">In File</p></div>
+            <div className="p-3 rounded-lg bg-purple-500/10 border border-purple-500/20 text-center cursor-pointer hover:bg-purple-500/15 transition-colors" onClick={() => setFilter('inDb')}><p className="text-xl font-semibold text-purple-400">{summary.dbDuplicates}</p><p className="text-xs text-purple-400/70">In DB</p></div>
+            <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] text-center cursor-pointer hover:bg-white/[0.04] transition-colors" onClick={() => setFilter('ignored')}><p className="text-xl font-semibold text-white/60">{summary.ignored}</p><p className="text-xs text-white/50">Ignored</p></div>
+          </div>
+
+          {/* FILTER TABS */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex gap-1">
+              {(['all', 'ready', 'invalid', 'inFile', 'inDb', 'ignored'] as FilterType[]).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                    filter === f 
+                      ? 'bg-white/10 text-white' 
+                      : 'text-white/50 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  {f === 'all' && `All (${summary.total})`}
+                  {f === 'ready' && `Ready (${summary.readyToImport})`}
+                  {f === 'invalid' && `Invalid (${summary.invalid})`}
+                  {f === 'inFile' && `In File (${summary.fileDuplicates})`}
+                  {f === 'inDb' && `In DB (${summary.dbDuplicates})`}
+                  {f === 'ignored' && `Ignored (${summary.ignored})`}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* BATCH ACTIONS */}
+          <div className="flex items-center gap-2 mb-4 p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+            <span className="text-xs text-white/50 mr-2">Batch:</span>
+            <Button variant="ghost" size="sm" onClick={ignoreAllInvalid} disabled={summary.invalid === 0} className="text-xs">
+              <EyeOff className="w-3 h-3 mr-1" />Ignore All Invalid
+            </Button>
+            <Button variant="ghost" size="sm" onClick={ignoreAllFileDuplicates} disabled={summary.fileDuplicates === 0} className="text-xs">
+              <EyeOff className="w-3 h-3 mr-1" />Ignore All File Dups
+            </Button>
+            <Button variant="ghost" size="sm" onClick={ignoreAllDbDuplicates} disabled={summary.dbDuplicates === 0} className="text-xs">
+              <EyeOff className="w-3 h-3 mr-1" />Ignore All DB Dups
+            </Button>
+            <Button variant="ghost" size="sm" onClick={keepAll} disabled={summary.ignored === 0} className="text-xs">
+              <Eye className="w-3 h-3 mr-1" />Keep All
+            </Button>
+            {selectedRows.size > 0 && (
+              <Button variant="ghost" size="sm" onClick={ignoreSelected} className="text-xs text-amber-400">
+                <EyeOff className="w-3 h-3 mr-1" />Ignore Selected ({selectedRows.size})
+              </Button>
+            )}
           </div>
 
           {/* REVIEW TABLE */}
           <div className="mb-6">
-            <h4 className="text-sm font-medium mb-3 flex items-center gap-2"><Edit2 className="w-4 h-4" />Review & Edit</h4>
+            <h4 className="text-sm font-medium mb-3 flex items-center gap-2"><Edit2 className="w-4 h-4" />Review & Edit {filter !== 'all' && <span className="text-white/50">• {filteredResults.length} shown</span>}</h4>
             <div className="max-h-96 overflow-y-auto rounded-lg border border-white/[0.06]">
               <table className="w-full text-sm">
                 <thead className="bg-white/[0.02] sticky top-0">
                   <tr>
-                    <th className="px-2 py-2 text-left text-white/50 font-normal w-16">Row</th>
+                    <th className="px-2 py-2 text-left text-white/50 font-normal w-10">
+                      <input
+                        type="checkbox"
+                        checked={filteredResults.length > 0 && filteredResults.every(r => selectedRows.has(validationResults.indexOf(r)))}
+                        onChange={toggleSelectAll}
+                        className="rounded border-white/20 bg-transparent"
+                      />
+                    </th>
+                    <th className="px-2 py-2 text-left text-white/50 font-normal w-14">Row</th>
                     <th className="px-2 py-2 text-left text-white/50 font-normal">Name</th>
                     <th className="px-2 py-2 text-left text-white/50 font-normal">Email</th>
                     <th className="px-2 py-2 text-left text-white/50 font-normal">Phone</th>
@@ -756,83 +918,94 @@ export default function ImportPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {validationResults.map((result, index) => (
-                    <tr key={index} className={`border-t border-white/[0.06] ${result.ignored ? 'opacity-50' : ''}`}>
-                      <td className="px-2 py-2 text-white/50">{result.row}</td>
-                      <td className="px-2 py-2" onClick={() => editingCell?.rowIndex !== index && setEditingCell({rowIndex: index, field: nameField})}>
-                        {editingCell?.rowIndex === index && editingCell.field === nameField ? (
+                  {filteredResults.map((result) => {
+                    const originalIndex = validationResults.indexOf(result);
+                    return (
+                      <tr key={originalIndex} className={`border-t border-white/[0.06] ${result.ignored ? 'opacity-50' : ''}`}>
+                        <td className="px-2 py-2">
                           <input
-                            type="text"
-                            defaultValue={(result.data[nameField] as string) || ''}
-                            onBlur={(e) => { handleCellEdit(index, nameField, e.target.value); setEditingCell(null); }}
-                            onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-                            className="w-full bg-black border border-white/20 rounded px-2 py-1 text-sm"
-                            autoFocus
+                            type="checkbox"
+                            checked={selectedRows.has(originalIndex)}
+                            onChange={() => toggleSelectRow(originalIndex)}
+                            className="rounded border-white/20 bg-transparent"
                           />
-                        ) : (
-                          <span 
-                            className="cursor-pointer hover:text-white text-white/70 border-b border-dashed border-white/20"
-                          >
-                            {(result.data[nameField] as string) || <span className="text-amber-400 italic">empty</span>}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-2 py-2" onClick={() => editingCell?.rowIndex !== index && setEditingCell({rowIndex: index, field: 'email'})}>
-                        {editingCell?.rowIndex === index && editingCell.field === 'email' ? (
-                          <input
-                            type="text"
-                            defaultValue={(result.data.email as string) || ''}
-                            onBlur={(e) => { handleCellEdit(index, 'email', e.target.value); setEditingCell(null); }}
-                            onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-                            className="w-full bg-black border border-white/20 rounded px-2 py-1 text-sm"
-                            autoFocus
-                          />
-                        ) : (
-                          <span 
-                            className={`cursor-pointer hover:text-white border-b border-dashed border-white/20 ${result.errors.some(e => e.includes('email')) ? 'text-amber-400' : 'text-white/70'}`}
-                          >
-                            {(result.data.email as string) || <span className="text-white/30">—</span>}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-2 py-2" onClick={() => editingCell?.rowIndex !== index && setEditingCell({rowIndex: index, field: 'phone'})}>
-                        {editingCell?.rowIndex === index && editingCell.field === 'phone' ? (
-                          <input
-                            type="text"
-                            defaultValue={(result.data.phone as string) || ''}
-                            onBlur={(e) => { handleCellEdit(index, 'phone', e.target.value); setEditingCell(null); }}
-                            onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-                            className="w-full bg-black border border-white/20 rounded px-2 py-1 text-sm"
-                            autoFocus
-                          />
-                        ) : (
-                          <span 
-                            className={`cursor-pointer hover:text-white border-b border-dashed border-white/20 ${result.errors.some(e => e.includes('phone')) ? 'text-amber-400' : 'text-white/70'}`}
-                          >
-                            {(result.data.phone as string) || <span className="text-white/30">—</span>}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-2 py-2">{getStatusBadge(result)}</td>
-                      <td className="px-2 py-2">
-                        <div className="flex gap-1">
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            onClick={() => toggleIgnoreRow(index)}
-                            className={result.ignored ? 'text-amber-400' : ''}
-                          >
-                            {result.ignored ? <><Eye className="w-3 h-3 mr-1" />Keep</> : <><EyeOff className="w-3 h-3 mr-1" />Ignore</>}
-                          </Button>
-                          {!result.isValid && !result.ignored && (
-                            <Button variant="ghost" size="sm" onClick={() => revalidateRow(index)}>
-                              <RefreshCw className="w-3 h-3 mr-1" />Check
-                            </Button>
+                        </td>
+                        <td className="px-2 py-2 text-white/50">{result.row}</td>
+                        <td className="px-2 py-2" onClick={() => editingCell?.rowIndex !== originalIndex && setEditingCell({rowIndex: originalIndex, field: nameField})}>
+                          {editingCell?.rowIndex === originalIndex && editingCell.field === nameField ? (
+                            <input
+                              type="text"
+                              defaultValue={(result.data[nameField] as string) || ''}
+                              onBlur={(e) => { handleCellEdit(originalIndex, nameField, e.target.value); setEditingCell(null); }}
+                              onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                              className="w-full bg-black border border-white/20 rounded px-2 py-1 text-sm"
+                              autoFocus
+                            />
+                          ) : (
+                            <span 
+                              className="cursor-pointer hover:text-white text-white/70 border-b border-dashed border-white/20"
+                            >
+                              {(result.data[nameField] as string) || <span className="text-amber-400 italic">empty</span>}
+                            </span>
                           )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="px-2 py-2" onClick={() => editingCell?.rowIndex !== originalIndex && setEditingCell({rowIndex: originalIndex, field: 'email'})}>
+                          {editingCell?.rowIndex === originalIndex && editingCell.field === 'email' ? (
+                            <input
+                              type="text"
+                              defaultValue={(result.data.email as string) || ''}
+                              onBlur={(e) => { handleCellEdit(originalIndex, 'email', e.target.value); setEditingCell(null); }}
+                              onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                              className="w-full bg-black border border-white/20 rounded px-2 py-1 text-sm"
+                              autoFocus
+                            />
+                          ) : (
+                            <span 
+                              className={`cursor-pointer hover:text-white border-b border-dashed border-white/20 ${result.errors.some(e => e.includes('email')) ? 'text-amber-400' : 'text-white/70'}`}
+                            >
+                              {(result.data.email as string) || <span className="text-white/30">—</span>}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-2 py-2" onClick={() => editingCell?.rowIndex !== originalIndex && setEditingCell({rowIndex: originalIndex, field: 'phone'})}>
+                          {editingCell?.rowIndex === originalIndex && editingCell.field === 'phone' ? (
+                            <input
+                              type="text"
+                              defaultValue={(result.data.phone as string) || ''}
+                              onBlur={(e) => { handleCellEdit(originalIndex, 'phone', e.target.value); setEditingCell(null); }}
+                              onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                              className="w-full bg-black border border-white/20 rounded px-2 py-1 text-sm"
+                              autoFocus
+                            />
+                          ) : (
+                            <span 
+                              className={`cursor-pointer hover:text-white border-b border-dashed border-white/20 ${result.errors.some(e => e.includes('phone')) ? 'text-amber-400' : 'text-white/70'}`}
+                            >
+                              {(result.data.phone as string) || <span className="text-white/30">—</span>}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-2 py-2">{getStatusBadge(result)}</td>
+                        <td className="px-2 py-2">
+                          <div className="flex gap-1">
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={() => toggleIgnoreRow(originalIndex)}
+                              className={result.ignored ? 'text-amber-400' : ''}
+                            >
+                              {result.ignored ? <><Eye className="w-3 h-3 mr-1" />Keep</> : <><EyeOff className="w-3 h-3 mr-1" />Ignore</>}
+                            </Button>
+                            {!result.isValid && !result.ignored && (
+                              <Button variant="ghost" size="sm" onClick={() => revalidateRow(originalIndex)}>
+                                <RefreshCw className="w-3 h-3 mr-1" />Check
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
