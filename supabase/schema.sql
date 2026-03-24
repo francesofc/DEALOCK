@@ -484,3 +484,19 @@ CREATE INDEX idx_workspace_activities_workspace_id ON workspace_activities(works
 
 -- Enable realtime for workspaces
 ALTER PUBLICATION supabase_realtime ADD TABLE workspaces;
+
+-- ============================================
+-- RLS FIX FOR WORKSPACES TABLE
+-- Run this if workspaces aren't visible in browser
+-- ============================================
+
+-- Enable RLS on workspaces
+ALTER TABLE workspaces ENABLE ROW LEVEL SECURITY;
+
+-- Drop existing policies to avoid conflicts
+DROP POLICY IF EXISTS "Allow all workspaces" ON workspaces;
+DROP POLICY IF EXISTS "Allow all workspace_activities" ON workspace_activities;
+
+-- Create permissive policies for Phase 2
+CREATE POLICY "Allow all workspaces" ON workspaces FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all workspace_activities" ON workspace_activities FOR ALL USING (true) WITH CHECK (true);

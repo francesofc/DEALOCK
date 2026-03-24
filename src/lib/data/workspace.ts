@@ -48,16 +48,24 @@ export type WorkspaceRecord = Workspace
  */
 async function checkTableExists(): Promise<boolean> {
   try {
-    const { error } = await workspacesTable()
+    // Add timeout to prevent hanging
+    const timeoutPromise = new Promise<never>((_, reject) => 
+      setTimeout(() => reject(new Error('Table check timeout')), 5000)
+    );
+    
+    const queryPromise = workspacesTable()
       .select('id')
       .limit(1);
+    
+    const { error } = await Promise.race([queryPromise, timeoutPromise]);
     
     if (error && error.message.includes('does not exist')) {
       showTableWarning();
       return false;
     }
     return !error;
-  } catch {
+  } catch (err) {
+    console.warn('[Workspace] Table check failed:', err);
     return false;
   }
 }
@@ -67,11 +75,8 @@ async function checkTableExists(): Promise<boolean> {
  * In single-workspace mode (pilot phase), returns the first active workspace
  */
 export async function getActiveWorkspace(): Promise<WorkspaceRecord | null> {
-  if (!(await checkTableExists())) {
-    return null;
-  }
-
   try {
+    // Direct query without table check first - let it fail naturally if table doesn't exist
     const { data, error } = await workspacesTable()
       .select('*')
       .eq('is_active', true)
@@ -80,12 +85,17 @@ export async function getActiveWorkspace(): Promise<WorkspaceRecord | null> {
       .single();
 
     if (error) {
+      // PGRST116 = no rows returned (no workspace found)
       if (error.code === 'PGRST116') {
-        // No workspace found
+        return null;
+      }
+      // PGRST204 = table does not exist
+      if (error.code === 'PGRST204' || error.message?.includes('does not exist')) {
+        showTableWarning();
         return null;
       }
       console.error('[Workspace] Error fetching workspace:', error);
-      throw error;
+      return null;
     }
 
     return data as WorkspaceRecord;

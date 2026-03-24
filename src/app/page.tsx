@@ -1,5 +1,11 @@
 "use client";
 
+// DEBUG: Instrumentation for onboarding test diagnosis
+if (typeof window !== 'undefined') {
+  console.log('[Dashboard] === COMPONENT SCRIPT EXECUTING ===');
+  console.log('[Dashboard] Timestamp:', new Date().toISOString());
+}
+
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
@@ -89,37 +95,102 @@ export default function CommandCenterPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function loadData() {
-      const [leadsData, buyersData, matchesData, financeData, activitiesData, mandatesData, workspaceData] = await Promise.all([
-        getLeads(),
-        getBuyers(),
-        getMatches(),
-        getFinanceProfiles(),
-        getActivities(),
-        getMandates(),
-        getActiveWorkspace(),
-      ]);
-      
-      setLeads(leadsData);
-      setBuyers(buyersData);
-      setMatches(matchesData);
-      setFinanceProfiles(financeData);
-      setActivities(activitiesData.slice(0, 5));
-      setMandates(mandatesData);
-      setWorkspace(workspaceData);
-      
-      // Load intelligence for priority sellers
-      const priorityLeads = leadsData.filter((l: Lead) => 
-        ['qualified', 'replied', 'call_scheduled', 'mandate_proposed'].includes(l.status)
-      ).slice(0, 5);
-      
-      const intelMap: Record<string, SellerIntelligence> = {};
-      for (const lead of priorityLeads) {
-        const intel = await getLeadIntelligence(lead.id, lead);
-        intelMap[lead.id] = intel;
-      }
-      setIntelligence(intelMap);
+    console.log('[Dashboard] useEffect MOUNT - Starting loadData');
+    
+    // SAFETY TIMEOUT: Force exit loading state after 10 seconds
+    const safetyTimeout = setTimeout(() => {
+      console.error('[Dashboard] SAFETY TIMEOUT: Forcing loading=false after 10s');
       setLoading(false);
+    }, 10000);
+    
+    async function loadData() {
+      console.log('[Dashboard] === LOAD START ===');
+      const startTime = performance.now();
+      
+      try {
+        // Sequential loading with precise logging
+        console.log('[Dashboard] Starting getLeads...');
+        const leadsStart = performance.now();
+        let leadsData: Lead[] = [];
+        try { leadsData = await getLeads(); } catch (e) { console.error('[Dashboard] getLeads failed:', e); }
+        console.log(`[Dashboard] getLeads done: ${(performance.now() - leadsStart).toFixed(0)}ms, count: ${leadsData.length}`);
+
+        console.log('[Dashboard] Starting getBuyers...');
+        const buyersStart = performance.now();
+        let buyersData: Buyer[] = [];
+        try { buyersData = await getBuyers(); } catch (e) { console.error('[Dashboard] getBuyers failed:', e); }
+        console.log(`[Dashboard] getBuyers done: ${(performance.now() - buyersStart).toFixed(0)}ms, count: ${buyersData.length}`);
+
+        console.log('[Dashboard] Starting getMatches...');
+        const matchesStart = performance.now();
+        let matchesData: MatchOpportunity[] = [];
+        try { matchesData = await getMatches(); } catch (e) { console.error('[Dashboard] getMatches failed:', e); }
+        console.log(`[Dashboard] getMatches done: ${(performance.now() - matchesStart).toFixed(0)}ms, count: ${matchesData.length}`);
+
+        console.log('[Dashboard] Starting getFinanceProfiles...');
+        const financeStart = performance.now();
+        let financeData: FinanceProfile[] = [];
+        try { financeData = await getFinanceProfiles(); } catch (e) { console.error('[Dashboard] getFinanceProfiles failed:', e); }
+        console.log(`[Dashboard] getFinanceProfiles done: ${(performance.now() - financeStart).toFixed(0)}ms, count: ${financeData.length}`);
+
+        console.log('[Dashboard] Starting getActivities...');
+        const activitiesStart = performance.now();
+        let activitiesData: Activity[] = [];
+        try { activitiesData = await getActivities(); } catch (e) { console.error('[Dashboard] getActivities failed:', e); }
+        console.log(`[Dashboard] getActivities done: ${(performance.now() - activitiesStart).toFixed(0)}ms, count: ${activitiesData.length}`);
+
+        console.log('[Dashboard] Starting getMandates...');
+        const mandatesStart = performance.now();
+        let mandatesData: Mandate[] = [];
+        try { mandatesData = await getMandates(); } catch (e) { console.error('[Dashboard] getMandates failed:', e); }
+        console.log(`[Dashboard] getMandates done: ${(performance.now() - mandatesStart).toFixed(0)}ms, count: ${mandatesData.length}`);
+
+        console.log('[Dashboard] Starting getActiveWorkspace...');
+        const workspaceStart = performance.now();
+        let workspaceData: WorkspaceRecord | null = null;
+        try { workspaceData = await getActiveWorkspace(); } catch (e) { console.error('[Dashboard] getActiveWorkspace ERROR:', e); }
+        console.log(`[Dashboard] getActiveWorkspace RESULT: name=${workspaceData?.agency_name || 'NULL'}, id=${workspaceData?.id || 'NULL'}`);
+        
+        console.log(`[Dashboard] === ALL DATA LOADED === Total: ${(performance.now() - startTime).toFixed(0)}ms`);
+        
+        console.log('[Dashboard] Setting states...');
+        setLeads(leadsData);
+        setBuyers(buyersData);
+        setMatches(matchesData);
+        setFinanceProfiles(financeData);
+        setActivities(activitiesData.slice(0, 5));
+        setMandates(mandatesData);
+        console.log('[Dashboard] Setting workspace to:', workspaceData?.agency_name || 'null');
+        setWorkspace(workspaceData);
+        console.log('[Dashboard] Setting loading to false');
+        setLoading(false);
+        console.log('[Dashboard] === LOAD COMPLETE ===');
+        
+        // Load intelligence for priority sellers (non-blocking)
+        try {
+          const priorityLeads = leadsData.filter((l: Lead) => 
+            ['qualified', 'replied', 'call_scheduled', 'mandate_proposed'].includes(l.status)
+          ).slice(0, 5);
+          
+          const intelMap: Record<string, SellerIntelligence> = {};
+          for (const lead of priorityLeads) {
+            try {
+              const intel = await getLeadIntelligence(lead.id, lead);
+              intelMap[lead.id] = intel;
+            } catch {
+              // Skip failed intelligence
+            }
+          }
+          setIntelligence(intelMap);
+        } catch (intelErr) {
+          console.warn('[Dashboard] Intelligence loading failed:', intelErr);
+        }
+      } catch (err) {
+        console.error('[Dashboard] Data loading failed:', err);
+      } finally {
+        clearTimeout(safetyTimeout);
+        setLoading(false);
+      }
     }
     loadData();
   }, []);
@@ -198,11 +269,22 @@ export default function CommandCenterPage() {
     }).format(amount);
   };
 
+  // DEBUG: Log render state
+  console.log('[Dashboard] RENDER: loading=' + loading + ', workspace=' + (workspace ? workspace.agency_name : 'null'));
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh]">
         <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mb-4" />
         <p className="text-white/50 text-sm">Loading command center...</p>
+        {/* DEBUG PANEL - Remove in production */}
+        <div className="mt-8 p-4 border border-red-500/30 bg-red-500/10 rounded text-xs font-mono">
+          <p className="text-red-400 font-bold">DEBUG STATE:</p>
+          <p>loading: {String(loading)}</p>
+          <p>workspace: {workspace ? workspace.agency_name : 'null'}</p>
+          <p>leads: {leads.length}</p>
+          <p>buyers: {buyers.length}</p>
+        </div>
       </div>
     );
   }

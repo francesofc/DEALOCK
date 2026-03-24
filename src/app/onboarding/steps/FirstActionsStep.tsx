@@ -6,6 +6,7 @@
 
 import { Button } from '@/components/ui/Button';
 import { useOnboarding } from '@/lib/onboarding/OnboardingContext';
+import { useRouter } from 'next/navigation';
 import { OnboardingTask } from '@/types/onboarding';
 import { 
   CheckCircle2, 
@@ -15,7 +16,8 @@ import {
   Settings, 
   Compass,
   ArrowRight,
-  Sparkles
+  Sparkles,
+  Upload
 } from 'lucide-react';
 
 const taskIcons: Record<OnboardingTask['actionType'], typeof Import> = {
@@ -33,6 +35,7 @@ const priorityColors = {
 
 export function FirstActionsStep() {
   const { state, actions } = useOnboarding();
+  const router = useRouter();
   const config = state.workspaceConfig;
   const tasks = config?.onboardingChecklist || [];
 
@@ -63,17 +66,51 @@ export function FirstActionsStep() {
         </div>
       </div>
 
-      {/* Quick Win Card */}
-      <div className="p-5 bg-gradient-to-br from-emerald-500/10 to-transparent border border-emerald-500/20 rounded-xl">
-        <div className="flex items-start gap-4">
-          <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
-            <Sparkles className="w-5 h-5 text-emerald-400" />
+      {/* Quick Win Options */}
+      <div className="grid sm:grid-cols-2 gap-4">
+        <div className="p-5 bg-gradient-to-br from-emerald-500/10 to-transparent border border-emerald-500/20 rounded-xl">
+          <div className="flex items-start gap-4">
+            <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
+              <Sparkles className="w-5 h-5 text-emerald-400" />
+            </div>
+            <div>
+              <h3 className="font-medium mb-1">Start Fresh</h3>
+              <p className="text-sm text-white/60 mb-3">
+                Add your first seller lead to see the Command Center come alive with real priorities.
+              </p>
+              <Button 
+                size="sm" 
+                variant="outline"
+                className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
+                onClick={() => router.push('/sellers/new')}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add First Lead
+              </Button>
+            </div>
           </div>
-          <div>
-            <h3 className="font-medium mb-1">Quick Start Recommendation</h3>
-            <p className="text-sm text-white/60">
-              Add your first seller lead to see the Command Center come alive with real priorities.
-            </p>
+        </div>
+        
+        <div className="p-5 bg-gradient-to-br from-blue-500/10 to-transparent border border-blue-500/20 rounded-xl">
+          <div className="flex items-start gap-4">
+            <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0">
+              <Upload className="w-5 h-5 text-blue-400" />
+            </div>
+            <div>
+              <h3 className="font-medium mb-1">Import Existing</h3>
+              <p className="text-sm text-white/60 mb-3">
+                Have existing data? Import your sellers, buyers, or mandates from CSV or spreadsheet.
+              </p>
+              <Button 
+                size="sm" 
+                variant="outline"
+                className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
+                onClick={() => router.push('/import')}
+              >
+                <Import className="w-4 h-4 mr-2" />
+                Import Data
+              </Button>
+            </div>
           </div>
         </div>
       </div>

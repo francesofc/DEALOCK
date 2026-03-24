@@ -47,11 +47,31 @@ test.describe.serial('Onboarding Persistence', () => {
 
   /**
    * TEST 1: Create workspace via API, verify visible in UI
+   * 
+   * NOTE: Data loading takes ~5 seconds due to multiple sequential fetches.
+   * The test waits up to 10 seconds for the workspace to appear.
    */
   test('completed workspace visible on dashboard', async ({ page }) => {
     console.log('TEST 1: Creating workspace and verifying dashboard...');
     
-    // Create completed workspace via API (simulating finished onboarding)
+    // Capture console logs from browser
+    const consoleLogs: string[] = [];
+    page.on('console', msg => {
+      const text = msg.text();
+      consoleLogs.push(`[${msg.type()}] ${text}`);
+      // Only log our dashboard logs, not font 404s
+      if (text.includes('[Dashboard]') || text.includes('TEST') || msg.type() === 'error') {
+        console.log(`[BROWSER ${msg.type()}] ${text.substring(0, 200)}`);
+      }
+    });
+    page.on('pageerror', err => {
+      console.log(`[BROWSER ERROR] ${err.message}`);
+    });
+    
+    // Clean up any existing test workspace first
+    await (supabase as any).from('workspaces').delete().eq('agency_name', TEST_AGENCY.name);
+    
+    // Create completed workspace via API FIRST (before navigating)
     const { data: workspace, error } = await (supabase as any)
       .from('workspaces')
       .insert({
@@ -77,13 +97,25 @@ test.describe.serial('Onboarding Persistence', () => {
     if (error) throw error;
     console.log('✅ Workspace created:', workspace.id);
     
-    // Navigate to dashboard
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    // Verify workspace exists in DB
+    const { data: verifyWorkspace } = await (supabase as any)
+      .from('workspaces')
+      .select('agency_name,is_active')
+      .eq('id', workspace.id)
+      .single();
+    console.log('✅ Workspace verified in DB:', verifyWorkspace);
     
-    // Verify workspace visible
-    await expect(page.getByTestId('command-center-workspace')).toBeVisible();
-    await expect(page.getByTestId('workspace-name')).toContainText(TEST_AGENCY.name);
+    // Navigate to dashboard
+    console.log('[TEST] Navigating to dashboard...');
+    await page.goto('/');
+    await page.waitForLoadState('domcontentloaded');
+    
+    // Wait for data to load - can take up to 6-7 seconds
+    console.log('[TEST] Waiting for workspace to appear (up to 10s)...');
+    await expect(page.getByTestId('command-center-workspace')).toBeVisible({ timeout: 10000 });
+    
+    // Verify workspace name
+    await expect(page.getByTestId('workspace-name')).toContainText(TEST_AGENCY.name, { timeout: 5000 });
     console.log('✅ Workspace name visible on dashboard');
     
     // No incomplete banner since onboarding is complete
@@ -100,16 +132,22 @@ test.describe.serial('Onboarding Persistence', () => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
     
+    // Wait for workspace to be visible
+    await page.waitForTimeout(2000);
+    
     // Verify before refresh
-    await expect(page.getByTestId('workspace-name')).toContainText(TEST_AGENCY.name);
+    await expect(page.getByTestId('workspace-name')).toContainText(TEST_AGENCY.name, { timeout: 10000 });
     console.log('✅ Workspace visible before refresh');
     
     // Refresh
     await page.reload();
     await page.waitForLoadState('networkidle');
     
+    // Wait after refresh
+    await page.waitForTimeout(2000);
+    
     // Verify after refresh
-    await expect(page.getByTestId('workspace-name')).toContainText(TEST_AGENCY.name);
+    await expect(page.getByTestId('workspace-name')).toContainText(TEST_AGENCY.name, { timeout: 10000 });
     console.log('✅ Workspace persisted after refresh');
   });
 

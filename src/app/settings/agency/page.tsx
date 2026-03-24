@@ -18,7 +18,7 @@ import {
   updateWorkspaceProfile, 
   WorkspaceRecord 
 } from '@/lib/data/workspace';
-import { Building2, Globe, MapPin, Phone, Mail, Palette, Upload, Loader2, AlertCircle } from 'lucide-react';
+import { Building2, Globe, MapPin, Phone, Mail, Palette, Upload, Loader2, AlertCircle, Sparkles, CheckCircle2 } from 'lucide-react';
 
 export default function AgencySettingsPage() {
   const router = useRouter();
@@ -266,39 +266,54 @@ export default function AgencySettingsPage() {
         {/* AI Enrichment Section */}
         <section>
           <h2 className="text-lg font-medium mb-4 flex items-center gap-2">
-            <Palette className="w-5 h-5 text-white/50" />
+            <Sparkles className="w-5 h-5 text-white/50" />
             AI Enrichment
           </h2>
           
           <div className="p-6 surface-elevated rounded-xl">
             <div className="flex items-start gap-4">
-              <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
-                <Building2 className="w-5 h-5 text-emerald-400" />
+              <div className="w-10 h-10 rounded-lg bg-violet-500/10 flex items-center justify-center shrink-0">
+                <Sparkles className="w-5 h-5 text-violet-400" />
               </div>
               <div className="flex-1">
-                <h3 className="font-medium mb-1">Auto-Enrich from Website</h3>
+                <div className="flex items-center gap-3 mb-1">
+                  <h3 className="font-medium">Auto-Enrich from Website</h3>
+                  {workspace?.enrichment_status === 'completed' && (
+                    <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      <CheckCircle2 className="w-3 h-3" />
+                      Enriched
+                    </span>
+                  )}
+                  {workspace?.enrichment_status === 'pending' && (
+                    <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Pending
+                    </span>
+                  )}
+                </div>
                 <p className="text-sm text-white/50 mb-4">
-                  Let Dealock analyze your website to automatically fill in specialties, 
-                  property types, and coverage areas.
+                  Let Dealock analyze your website to automatically detect specialties, 
+                  property types, coverage areas, and brand positioning.
                 </p>
                 <div className="flex items-center gap-3">
                   <Button 
                     variant="outline" 
-                    className="border-white/10"
+                    className="border-white/10 hover:bg-violet-500/10 hover:border-violet-500/30"
                     onClick={runEnrichment}
                     disabled={!formData.website}
                   >
-                    Run AI Enrichment
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    Run AI Analysis
                   </Button>
-                  {workspace?.enrichment_status === 'completed' && (
-                    <span className="text-sm text-emerald-400">
-                      ✓ Previously enriched
+                  {workspace?.enrichment_completed_at && (
+                    <span className="text-xs text-white/40">
+                      Last run: {new Date(workspace.enrichment_completed_at).toLocaleDateString()}
                     </span>
                   )}
                 </div>
                 {!formData.website && (
                   <p className="text-xs text-amber-400/80 mt-2">
-                    Add your website above to enable AI enrichment
+                    Add your website in Contact & Market to enable AI enrichment
                   </p>
                 )}
               </div>
