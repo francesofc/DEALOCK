@@ -25,7 +25,8 @@ import {
   Building2,
   ShieldCheck,
   BarChart3,
-  CheckCircle
+  CheckCircle,
+  Settings
 } from "lucide-react";
 import { 
   getLeads, 
@@ -35,6 +36,7 @@ import {
   getMatches, 
   getFinanceProfiles 
 } from "@/lib/data";
+import { getActiveWorkspace, WorkspaceRecord } from "@/lib/data/workspace";
 import { getLeadIntelligence } from "@/lib/intelligence/mock-intelligence";
 import { 
   getSellerNextAction, 
@@ -57,6 +59,7 @@ import {
 } from "@/types/database";
 import { SellerIntelligence } from "@/types/seller-intelligence";
 import { useTranslation } from "@/lib/i18n";
+import { OnboardingTask } from "@/types/onboarding";
 
 const activityTypeMap: Record<ActivityType, { label: string }> = {
   call: { label: "Call" },
@@ -82,17 +85,19 @@ export default function CommandCenterPage() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [mandates, setMandates] = useState<Mandate[]>([]);
   const [intelligence, setIntelligence] = useState<Record<string, SellerIntelligence>>({});
+  const [workspace, setWorkspace] = useState<WorkspaceRecord | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function loadData() {
-      const [leadsData, buyersData, matchesData, financeData, activitiesData, mandatesData] = await Promise.all([
+      const [leadsData, buyersData, matchesData, financeData, activitiesData, mandatesData, workspaceData] = await Promise.all([
         getLeads(),
         getBuyers(),
         getMatches(),
         getFinanceProfiles(),
         getActivities(),
         getMandates(),
+        getActiveWorkspace(),
       ]);
       
       setLeads(leadsData);
@@ -101,9 +106,10 @@ export default function CommandCenterPage() {
       setFinanceProfiles(financeData);
       setActivities(activitiesData.slice(0, 5));
       setMandates(mandatesData);
+      setWorkspace(workspaceData);
       
       // Load intelligence for priority sellers
-      const priorityLeads = leadsData.filter(l => 
+      const priorityLeads = leadsData.filter((l: Lead) => 
         ['qualified', 'replied', 'call_scheduled', 'mandate_proposed'].includes(l.status)
       ).slice(0, 5);
       
@@ -212,8 +218,57 @@ export default function CommandCenterPage() {
             </p>
             <h1 className="text-3xl font-semibold tracking-tight">{t.command_center.title}</h1>
           </div>
+          {workspace && (
+            <div className="flex items-center gap-3" data-testid="command-center-workspace">
+              <span className="text-sm text-white/40">Workspace:</span>
+              <span className="font-medium" data-testid="workspace-name">{workspace.agency_name}</span>
+            </div>
+          )}
         </div>
       </section>
+
+      {/* WORKSPACE STATUS & ONBOARDING */}
+      {workspace && workspace.onboarding_status !== 'completed' && (
+        <section className="p-5 surface-elevated rounded-xl border-l-2 border-l-amber-400">
+          <div className="flex items-start justify-between">
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center">
+                <Settings className="w-5 h-5 text-amber-400" />
+              </div>
+              <div>
+                <h3 className="font-medium mb-1">Complete Your Workspace Setup</h3>
+                <p className="text-sm text-white/50">
+                  Finish configuring your agency profile and add your first data to get the most from Dealock.
+                </p>
+                <div className="mt-3 flex items-center gap-4">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="border-white/10"
+                    onClick={() => router.push('/settings/agency')}
+                  >
+                    Complete Setup
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    onClick={() => router.push('/onboarding')}
+                  >
+                    Resume Onboarding
+                  </Button>
+                </div>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-2xl font-semibold">
+                {workspace.onboarding_checklist?.filter((t: OnboardingTask) => t.isCompleted).length || 0}
+                <span className="text-white/30">/{workspace.onboarding_checklist?.length || 4}</span>
+              </div>
+              <p className="text-xs text-white/40">tasks complete</p>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* PREMIUM METRICS STRIP */}
       <section className="grid grid-cols-6 gap-4">

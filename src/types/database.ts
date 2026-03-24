@@ -343,6 +343,68 @@ export interface Database {
         Insert: any
         Update: any
       }
+      workspaces: {
+        Row: Workspace
+        Insert: any
+        Update: any
+      }
+      workspace_activities: {
+        Row: WorkspaceActivity
+        Insert: any
+        Update: any
+      }
     }
   }
+}
+
+// ----------------------------------------
+// WORKSPACE & ONBOARDING TYPES
+// ----------------------------------------
+
+export type TeamSize = 'solo' | 'small' | 'medium' | 'large'
+export type OnboardingStatus = 'not_started' | 'in_progress' | 'completed'
+
+export interface WorkspaceSettings {
+  currency: string
+  areaUnit: 'm2' | 'sqft'
+  dateFormat: string
+  language: string
+  notifications: {
+    email: boolean
+    browser: boolean
+  }
+}
+
+export interface Workspace {
+  id: string
+  created_at: string
+  updated_at: string
+  agency_name: string
+  agency_description?: string
+  agency_website?: string
+  agency_email?: string
+  agency_phone?: string
+  primary_market: string
+  team_size: TeamSize
+  property_types: string[]
+  logo_url?: string
+  primary_color: string
+  onboarding_status: OnboardingStatus
+  onboarding_step: string
+  onboarding_completed_at?: string
+  onboarding_checklist: any[]
+  settings: WorkspaceSettings
+  enrichment_status: string
+  enrichment_data: Record<string, unknown>
+  enrichment_completed_at?: string
+  is_active: boolean
+}
+
+export interface WorkspaceActivity {
+  id: string
+  created_at: string
+  workspace_id: string
+  activity_type: string
+  activity_data: Record<string, unknown>
+  performed_by?: string
 }

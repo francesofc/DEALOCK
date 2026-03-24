@@ -403,3 +403,84 @@ CREATE TRIGGER update_match_opportunities_updated_at
   BEFORE UPDATE ON match_opportunities 
   FOR EACH ROW 
   EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================
+-- WORKSPACE & ONBOARDING TABLES (Phase 2)
+-- ============================================
+
+-- Team size enum
+CREATE TYPE team_size AS ENUM ('solo', 'small', 'medium', 'large');
+
+-- Onboarding status enum
+CREATE TYPE onboarding_status AS ENUM (
+  'not_started',
+  'in_progress',
+  'completed'
+);
+
+-- Workspace configuration table
+CREATE TABLE workspaces (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  
+  -- Agency identity (required)
+  agency_name TEXT NOT NULL,
+  agency_description TEXT,
+  agency_website TEXT,
+  agency_email TEXT,
+  agency_phone TEXT,
+  primary_market TEXT NOT NULL,
+  
+  -- Team & operation
+  team_size team_size DEFAULT 'solo',
+  property_types TEXT[] DEFAULT '{}',
+  
+  -- Brand assets
+  logo_url TEXT,
+  primary_color TEXT DEFAULT '#10b981',
+  
+  -- Onboarding state
+  onboarding_status onboarding_status DEFAULT 'not_started',
+  onboarding_step TEXT DEFAULT 'welcome',
+  onboarding_completed_at TIMESTAMPTZ,
+  onboarding_checklist JSONB DEFAULT '[]'::jsonb,
+  
+  -- Workspace settings
+  settings JSONB DEFAULT '{
+    "currency": "EUR",
+    "areaUnit": "m2",
+    "dateFormat": "DD/MM/YYYY",
+    "language": "en",
+    "notifications": {
+      "email": true,
+      "browser": true
+    }
+  }'::jsonb,
+  
+  -- Enrichment state (future AI)
+  enrichment_status TEXT DEFAULT 'pending',
+  enrichment_data JSONB DEFAULT '{}'::jsonb,
+  enrichment_completed_at TIMESTAMPTZ,
+  
+  -- Metadata
+  is_active BOOLEAN DEFAULT true
+);
+
+-- Workspace activity log (for tracking onboarding actions)
+CREATE TABLE workspace_activities (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE NOT NULL,
+  activity_type TEXT NOT NULL, -- 'onboarding_step', 'enrichment', 'settings_change', etc.
+  activity_data JSONB DEFAULT '{}'::jsonb,
+  performed_by TEXT -- user identifier
+);
+
+-- Indexes for workspaces
+CREATE INDEX idx_workspaces_onboarding_status ON workspaces(onboarding_status);
+CREATE INDEX idx_workspaces_is_active ON workspaces(is_active);
+CREATE INDEX idx_workspace_activities_workspace_id ON workspace_activities(workspace_id);
+
+-- Enable realtime for workspaces
+ALTER PUBLICATION supabase_realtime ADD TABLE workspaces;
