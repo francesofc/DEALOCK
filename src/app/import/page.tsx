@@ -30,6 +30,8 @@ import { useTranslation } from "@/lib/i18n";
 import Papa from "papaparse";
 import { createLead } from "@/lib/data/leads";
 import { createClient } from "@/lib/supabase/client";
+import { createImportSession, getRecentImportSessions, ImportSession } from "@/lib/data/import-sessions";
+import { createBuyer } from "@/lib/data/buyers";
 
 // ============================================
 // TYPES
@@ -271,6 +273,8 @@ export default function ImportPage() {
   const [editingCell, setEditingCell] = useState<{rowIndex: number, field: string} | null>(null);
   const [filter, setFilter] = useState<FilterType>("all");
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+  const [importHistory, setImportHistory] = useState<ImportSession[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   const fields = entityType === "seller" ? SELLER_FIELDS : BUYER_FIELDS;
   const nameField = entityType === "seller" ? "owner_name" : "name";
@@ -289,6 +293,18 @@ export default function ImportPage() {
       }
     });
   }, [validationResults, filter]);
+
+  // Reset import state for new import
+  const resetImport = () => {
+    setRawData([]);
+    setHeaders([]);
+    setColumnMapping([]);
+    setValidationResults([]);
+    setSummary(null);
+    setFileName("");
+    setFilter("all");
+    setSelectedRows(new Set());
+  };
 
   // ============================================
   // STEP 1: UPLOAD
@@ -573,6 +589,18 @@ export default function ImportPage() {
     }
   }, [validationResults, step]);
 
+  // Load import history on mount
+  useEffect(() => {
+    loadImportHistory();
+  }, []);
+
+  const loadImportHistory = async () => {
+    setIsLoadingHistory(true);
+    const history = await getRecentImportSessions(5);
+    setImportHistory(history);
+    setIsLoadingHistory(false);
+  };
+
   // ============================================
   // STEP 4: IMPORT
   // ============================================
@@ -626,14 +654,78 @@ export default function ImportPage() {
       }
     }
 
-    setSummary(prev => prev ? { ...prev, imported } : null);
+    const finalSummary = {
+      ...summary!,
+      imported,
+    };
+    setSummary(finalSummary);
+    
+    // Save import session
+    const status = imported === validRows.length 
+      ? 'completed' 
+      : imported > 0 
+        ? 'partial' 
+        : 'failed';
+    
+    await createImportSession({
+      entity_type: entityType,
+      file_name: fileName,
+      total_rows: finalSummary.total,
+      imported_count: imported,
+      invalid_count: finalSummary.invalid,
+      file_duplicate_count: finalSummary.fileDuplicates,
+      db_duplicate_count: finalSummary.dbDuplicates,
+      ignored_count: finalSummary.ignored,
+      status,
+    });
+    
+    // Refresh import history
+    await loadImportHistory();
+    
     setStep("results");
     setIsImporting(false);
-  }, [validationResults, entityType]);
+  }, [validationResults, entityType, summary, fileName]);
 
   // ============================================
-  // DOWNLOAD ERROR REPORT
+  // DOWNLOAD REPORTS
   // ============================================
+
+  const downloadReport = (type: 'invalid' | 'skipped' | 'imported') => {
+    let rows: ValidationResult[] = [];
+    let filename = '';
+    
+    switch (type) {
+      case 'invalid':
+        rows = validationResults.filter(r => !r.isValid && !r.isDuplicateInFile && !r.isDuplicateInDb);
+        filename = 'invalid-rows-report.csv';
+        break;
+      case 'skipped':
+        rows = validationResults.filter(r => r.isDuplicateInFile || r.isDuplicateInDb || r.ignored);
+        filename = 'skipped-rows-report.csv';
+        break;
+      case 'imported':
+        rows = validationResults.filter(r => r.isValid && !r.ignored);
+        filename = 'imported-rows-report.csv';
+        break;
+    }
+    
+    if (rows.length === 0) return;
+
+    const csv = Papa.unparse(rows.map(r => ({
+      row: r.row,
+      ...r.data,
+      status: r.isDuplicateInFile ? 'Duplicate in file' : r.isDuplicateInDb ? 'Already in database' : r.ignored ? 'Ignored' : 'Valid',
+      errors: r.errors.join("; ") || 'None',
+    })));
+
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
 
   const downloadErrorReport = useCallback(() => {
     const problematicRows = validationResults.filter(r => !r.isValid || r.isDuplicateInFile || r.isDuplicateInDb);
@@ -653,6 +745,31 @@ export default function ImportPage() {
     a.click();
     window.URL.revokeObjectURL(url);
   }, [validationResults]);
+
+  // ============================================
+  // CSV TEMPLATES
+  // ============================================
+
+  const downloadTemplate = (type: 'seller' | 'buyer') => {
+    let csv = '';
+    let filename = '';
+    
+    if (type === 'seller') {
+      csv = 'owner_name,email,phone,property_type,city,price,notes\n"John Smith","john@example.com","+1234567890","apartment","Miami","500000","Looking to sell quickly"\n"Jane Doe","jane@example.com","+0987654321","house","Boston","750000","Price negotiable"';
+      filename = 'seller-import-template.csv';
+    } else {
+      csv = 'name,email,phone,budget_min,budget_max,property_types,target_areas,timeline,seriousness,pre_approved,notes\n"Mike Buyer","mike@example.com","+1234567890","300000","500000","apartment","Miami","3_months","high",false,"First-time buyer"\n"Sarah Investor","sarah@example.com","+0987654321","500000","1000000","house,commercial","Boston,New York","immediate","very_high",true,"Cash buyer"';
+      filename = 'buyer-import-template.csv';
+    }
+    
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
 
   // ============================================
   // STATUS BADGE HELPER
@@ -720,46 +837,89 @@ export default function ImportPage() {
 
       {/* STEP 1: UPLOAD */}
       {step === "upload" && (
-        <Card className="p-12">
-          <div onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop} className={`border-2 border-dashed rounded-xl p-12 text-center transition-colors ${dragActive ? "border-white bg-white/5" : "border-white/10 hover:border-white/30"}`}>
-            <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mx-auto mb-6">
-              <Upload className="w-8 h-8 text-white/50" />
+        <div className="space-y-6">
+          <Card className="p-12">
+            <div onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop} className={`border-2 border-dashed rounded-xl p-12 text-center transition-colors ${dragActive ? "border-white bg-white/5" : "border-white/10 hover:border-white/30"}`}>
+              <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mx-auto mb-6">
+                <Upload className="w-8 h-8 text-white/50" />
+              </div>
+              <h3 className="text-xl font-medium mb-2">{t.import.upload.title}</h3>
+              <p className="text-white/50 mb-6 max-w-md mx-auto">{t.import.upload.description}</p>
+              <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-white/20 hover:border-white/40 hover:bg-white/5 transition-colors">
+                <input type="file" accept=".csv" onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} className="hidden" />
+                <FileSpreadsheet className="w-4 h-4" />
+                {t.import.upload.selectFile}
+              </label>
+              <p className="text-xs text-white/30 mt-6">{t.import.upload.limits}</p>
             </div>
-            <h3 className="text-xl font-medium mb-2">{t.import.upload.title}</h3>
-            <p className="text-white/50 mb-6 max-w-md mx-auto">{t.import.upload.description}</p>
-            <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-white/20 hover:border-white/40 hover:bg-white/5 transition-colors">
-              <input type="file" accept=".csv" onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} className="hidden" />
-              <FileSpreadsheet className="w-4 h-4" />
-              {t.import.upload.selectFile}
-            </label>
-            <p className="text-xs text-white/30 mt-6">{t.import.upload.limits}</p>
-          </div>
 
-          <div className="mt-8 grid md:grid-cols-2 gap-6">
-            <div className="p-4 rounded-lg bg-white/[0.02] border border-white/[0.06]">
-              <h4 className="font-medium mb-3 flex items-center gap-2"><Building2 className="w-4 h-4 text-white/50" />{t.import.template.required}</h4>
-              <p className="text-sm text-white/50 mb-3">{t.import.template.requiredDesc}</p>
-              <div className="flex flex-wrap gap-2">
-                <code className="text-xs bg-white/5 px-2 py-1 rounded">{nameField}</code>
-                <span className="text-xs text-white/30">+</span>
-                <code className="text-xs bg-white/5 px-2 py-1 rounded">email</code>
-                <span className="text-xs text-white/30">or</span>
-                <code className="text-xs bg-white/5 px-2 py-1 rounded">phone</code>
+            <div className="mt-8 grid md:grid-cols-2 gap-6">
+              <div className="p-4 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+                <h4 className="font-medium mb-3 flex items-center gap-2"><Building2 className="w-4 h-4 text-white/50" />{t.import.template.required}</h4>
+                <p className="text-sm text-white/50 mb-3">{t.import.template.requiredDesc}</p>
+                <div className="flex flex-wrap gap-2">
+                  <code className="text-xs bg-white/5 px-2 py-1 rounded">{nameField}</code>
+                  <span className="text-xs text-white/30">+</span>
+                  <code className="text-xs bg-white/5 px-2 py-1 rounded">email</code>
+                  <span className="text-xs text-white/30">or</span>
+                  <code className="text-xs bg-white/5 px-2 py-1 rounded">phone</code>
+                </div>
+              </div>
+              <div className="p-4 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+                <h4 className="font-medium mb-3 flex items-center gap-2"><Users className="w-4 h-4 text-white/50" />{t.import.template.optional}</h4>
+                <p className="text-sm text-white/50 mb-3">{t.import.template.optionalDesc}</p>
+                <div className="flex flex-wrap gap-2">
+                  {entityType === "seller" ? (
+                    <><code className="text-xs bg-white/5 px-2 py-1 rounded">property_type</code><code className="text-xs bg-white/5 px-2 py-1 rounded">city</code><code className="text-xs bg-white/5 px-2 py-1 rounded">price</code></>
+                  ) : (
+                    <><code className="text-xs bg-white/5 px-2 py-1 rounded">budget_max</code><code className="text-xs bg-white/5 px-2 py-1 rounded">target_areas</code><code className="text-xs bg-white/5 px-2 py-1 rounded">timeline</code></>
+                  )}
+                </div>
               </div>
             </div>
-            <div className="p-4 rounded-lg bg-white/[0.02] border border-white/[0.06]">
-              <h4 className="font-medium mb-3 flex items-center gap-2"><Users className="w-4 h-4 text-white/50" />{t.import.template.optional}</h4>
-              <p className="text-sm text-white/50 mb-3">{t.import.template.optionalDesc}</p>
-              <div className="flex flex-wrap gap-2">
-                {entityType === "seller" ? (
-                  <><code className="text-xs bg-white/5 px-2 py-1 rounded">property_type</code><code className="text-xs bg-white/5 px-2 py-1 rounded">city</code><code className="text-xs bg-white/5 px-2 py-1 rounded">price</code></>
-                ) : (
-                  <><code className="text-xs bg-white/5 px-2 py-1 rounded">budget_max</code><code className="text-xs bg-white/5 px-2 py-1 rounded">target_areas</code><code className="text-xs bg-white/5 px-2 py-1 rounded">timeline</code></>
-                )}
+
+            {/* Template Downloads */}
+            <div className="mt-8 pt-8 border-t border-white/[0.06]">
+              <h4 className="font-medium mb-4 flex items-center gap-2"><Download className="w-4 h-4 text-white/50" />Download Templates</h4>
+              <div className="flex flex-wrap gap-3">
+                <Button variant="outline" size="sm" onClick={() => downloadTemplate('seller')}>
+                  <FileSpreadsheet className="w-4 h-4 mr-2" />Seller Template
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => downloadTemplate('buyer')}>
+                  <FileSpreadsheet className="w-4 h-4 mr-2" />Buyer Template
+                </Button>
               </div>
             </div>
-          </div>
-        </Card>
+          </Card>
+
+          {/* Import History */}
+          {importHistory.length > 0 && (
+            <Card className="p-6">
+              <h4 className="font-medium mb-4 flex items-center gap-2"><Database className="w-4 h-4 text-white/50" />Recent Imports</h4>
+              <div className="space-y-3">
+                {importHistory.map((session) => (
+                  <div key={session.id} className="flex items-center justify-between p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+                    <div className="flex items-center gap-3">
+                      <Badge variant={session.status === 'completed' ? 'default' : session.status === 'partial' ? 'secondary' : 'destructive'} className="text-xs">
+                        {session.status}
+                      </Badge>
+                      <div>
+                        <p className="text-sm font-medium">{session.file_name}</p>
+                        <p className="text-xs text-white/50">
+                          {new Date(session.created_at).toLocaleString()} • {session.entity_type === 'seller' ? 'Sellers' : 'Buyers'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm">{session.imported_count} / {session.total_rows}</p>
+                      <p className="text-xs text-white/50">imported</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+        </div>
       )}
 
       {/* STEP 2: PREVIEW */}
@@ -1022,23 +1182,50 @@ export default function ImportPage() {
 
       {/* STEP 4: RESULTS */}
       {step === "results" && summary && (
-        <Card className="p-12 text-center">
-          <div className="w-20 h-20 rounded-full bg-green-500/10 flex items-center justify-center mx-auto mb-6">
-            <CheckCircle className="w-10 h-10 text-green-400" />
-          </div>
-          <h3 className="text-2xl font-semibold mb-2">{t.import.results.success}</h3>
-          <p className="text-white/50 mb-8">{t.import.results.imported.replace("{{count}}", String(summary.imported))}</p>
-
-          <div className="grid grid-cols-4 gap-4 max-w-lg mx-auto mb-8">
-            <div className="p-4 rounded-lg bg-white/[0.02]"><p className="text-2xl font-semibold text-green-400">{summary.imported}</p><p className="text-xs text-white/50">Imported</p></div>
-            <div className="p-4 rounded-lg bg-white/[0.02]"><p className="text-2xl font-semibold text-amber-400">{summary.ignored}</p><p className="text-xs text-white/50">Ignored</p></div>
-            <div className="p-4 rounded-lg bg-white/[0.02]"><p className="text-2xl font-semibold text-blue-400">{summary.fileDuplicates}</p><p className="text-xs text-white/50">In File</p></div>
-            <div className="p-4 rounded-lg bg-white/[0.02]"><p className="text-2xl font-semibold text-purple-400">{summary.dbDuplicates}</p><p className="text-xs text-white/50">In DB</p></div>
+        <Card className="p-12">
+          <div className="text-center mb-8">
+            <div className="w-20 h-20 rounded-full bg-green-500/10 flex items-center justify-center mx-auto mb-6">
+              <CheckCircle className="w-10 h-10 text-green-400" />
+            </div>
+            <h3 className="text-2xl font-semibold mb-2">{t.import.results.success}</h3>
+            <p className="text-white/50">{t.import.results.imported.replace("{{count}}", String(summary.imported))}</p>
           </div>
 
-          <div className="flex items-center justify-center gap-4">
-            <Button variant="outline" onClick={() => setStep("upload")}>{t.import.results.importMore}</Button>
-            <Button onClick={() => router.push(entityType === "seller" ? "/sellers" : "/buyers")}>View {entityType === "seller" ? "Sellers" : "Buyers"}</Button>
+          {/* Summary Cards */}
+          <div className="grid grid-cols-4 gap-4 max-w-2xl mx-auto mb-8">
+            <div className="p-4 rounded-lg bg-green-500/5 border border-green-500/10"><p className="text-2xl font-semibold text-green-400">{summary.imported}</p><p className="text-xs text-white/50">Imported</p></div>
+            <div className="p-4 rounded-lg bg-amber-500/5 border border-amber-500/10"><p className="text-2xl font-semibold text-amber-400">{summary.invalid}</p><p className="text-xs text-white/50">Invalid</p></div>
+            <div className="p-4 rounded-lg bg-blue-500/5 border border-blue-500/10"><p className="text-2xl font-semibold text-blue-400">{summary.fileDuplicates}</p><p className="text-xs text-white/50">In File</p></div>
+            <div className="p-4 rounded-lg bg-purple-500/5 border border-purple-500/10"><p className="text-2xl font-semibold text-purple-400">{summary.dbDuplicates}</p><p className="text-xs text-white/50">In DB</p></div>
+          </div>
+
+          {/* Download Reports */}
+          <div className="max-w-2xl mx-auto mb-8">
+            <h4 className="text-sm font-medium mb-3 text-white/70">Download Reports</h4>
+            <div className="flex flex-wrap gap-3 justify-center">
+              <Button variant="outline" size="sm" onClick={() => downloadReport('imported')} disabled={summary.imported === 0}>
+                <Download className="w-4 h-4 mr-2" />Imported ({summary.imported})
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => downloadReport('invalid')} disabled={summary.invalid === 0}>
+                <Download className="w-4 h-4 mr-2" />Invalid ({summary.invalid})
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => downloadReport('skipped')} disabled={summary.fileDuplicates + summary.dbDuplicates + summary.ignored === 0}>
+                <Download className="w-4 h-4 mr-2" />Skipped ({summary.fileDuplicates + summary.dbDuplicates + summary.ignored})
+              </Button>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex items-center justify-center gap-4 flex-wrap">
+            <Button variant="outline" onClick={() => { resetImport(); setStep("upload"); }}>
+              {t.import.results.importMore}
+            </Button>
+            <Button onClick={() => router.push(entityType === "seller" ? "/sellers" : "/buyers")}>
+              View {entityType === "seller" ? "Sellers" : "Buyers"}
+            </Button>
+            <Button variant="ghost" onClick={() => router.push("/")}>
+              Command Center
+            </Button>
           </div>
         </Card>
       )}

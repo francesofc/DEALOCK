@@ -500,3 +500,52 @@ DROP POLICY IF EXISTS "Allow all workspace_activities" ON workspace_activities;
 -- Create permissive policies for Phase 2
 CREATE POLICY "Allow all workspaces" ON workspaces FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all workspace_activities" ON workspace_activities FOR ALL USING (true) WITH CHECK (true);
+
+
+-- ============================================
+-- IMPORT SESSIONS (Phase 5)
+-- ============================================
+
+-- Import status enum
+CREATE TYPE import_status AS ENUM (
+  'completed',
+  'partial',
+  'failed'
+);
+
+-- Import sessions table for tracking import history
+CREATE TABLE import_sessions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  
+  -- Import metadata
+  entity_type TEXT NOT NULL CHECK (entity_type IN ('seller', 'buyer')),
+  file_name TEXT NOT NULL,
+  
+  -- Row counts
+  total_rows INTEGER NOT NULL DEFAULT 0,
+  imported_count INTEGER NOT NULL DEFAULT 0,
+  invalid_count INTEGER NOT NULL DEFAULT 0,
+  file_duplicate_count INTEGER NOT NULL DEFAULT 0,
+  db_duplicate_count INTEGER NOT NULL DEFAULT 0,
+  ignored_count INTEGER NOT NULL DEFAULT 0,
+  
+  -- Session status
+  status import_status NOT NULL DEFAULT 'completed',
+  
+  -- Optional error message for failed imports
+  error_message TEXT
+);
+
+-- Index for querying recent imports
+CREATE INDEX idx_import_sessions_created_at ON import_sessions(created_at DESC);
+CREATE INDEX idx_import_sessions_entity_type ON import_sessions(entity_type);
+
+-- Enable RLS
+ALTER TABLE import_sessions ENABLE ROW LEVEL SECURITY;
+
+-- Allow all access for Phase 5 (will be restricted with auth later)
+CREATE POLICY "Allow all import_sessions" ON import_sessions FOR ALL USING (true) WITH CHECK (true);
+
+-- Enable realtime for import_sessions
+ALTER PUBLICATION supabase_realtime ADD TABLE import_sessions;
