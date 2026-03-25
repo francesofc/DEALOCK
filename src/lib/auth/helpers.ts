@@ -1,80 +1,73 @@
-import { createClient as createServerClient } from '@/lib/supabase/server'
 import { createClient as createBrowserClient } from '@/lib/supabase/client'
 import { User } from './config'
 
-// PHASE 2: Auth helper functions scaffold
-// These will be fully implemented when auth UI is built
-
 /**
  * Get current user from server component
+ * Phase 7: Real implementation - call from server components only
  */
 export async function getCurrentUser(): Promise<User | null> {
-  // TODO: Implement when auth is ready
-  // const supabase = createServerClient()
-  // const { data: { user } } = await supabase.auth.getUser()
-  // if (!user) return null
-  // 
-  // const { data: profile } = await supabase
-  //   .from('profiles')
-  //   .select('*')
-  //   .eq('id', user.id)
-  //   .single()
-  // 
-  // return profile
-
-  // Return mock user for Phase 2
-  return {
-    id: 'user-1',
-    email: 'john@mandateos.com',
-    full_name: 'John Doe',
-    role: 'admin',
-    created_at: '2024-01-01T00:00:00Z',
-  }
+  // This function should only be called from server components
+  // It will be imported from a separate server-only file
+  console.warn('getCurrentUser should be imported from @/lib/auth/server')
+  return null
 }
 
 /**
  * Get current session from client component
+ * Phase 7: Real implementation
  */
 export async function getSession() {
-  // TODO: Implement when auth is ready
-  // const supabase = createBrowserClient()
-  // return await supabase.auth.getSession()
-  
-  return {
-    data: {
-      session: {
-        user: {
-          id: 'user-1',
-          email: 'john@mandateos.com',
-        },
-      },
-    },
-    error: null,
-  }
+  const supabase = createBrowserClient()
+  return await supabase.auth.getSession()
 }
 
 /**
  * Sign out helper
+ * Phase 7: Real implementation
  */
 export async function signOut() {
-  // TODO: Implement when auth is ready
-  // const supabase = createBrowserClient()
-  // await supabase.auth.signOut()
+  const supabase = createBrowserClient()
+  await supabase.auth.signOut()
 }
 
 /**
  * Check if user is authenticated (client-side)
+ * Phase 7: Real implementation
  */
-export function isAuthenticated(): boolean {
-  // TODO: Implement real check when auth is ready
-  // For Phase 2, always return true to allow access
-  return true
+export async function isAuthenticated(): Promise<boolean> {
+  const supabase = createBrowserClient()
+  const { data: { session } } = await supabase.auth.getSession()
+  return !!session
 }
 
 /**
  * Check if route is protected
  */
 export function isProtectedRoute(pathname: string): boolean {
-  const protectedPaths = ['/', '/sellers', '/pipeline', '/activities', '/mandates', '/settings']
-  return protectedPaths.some(path => pathname === path || pathname.startsWith(`${path}/`))
+  const publicPaths = ['/login', '/signup', '/auth/callback', '/auth/reset-password']
+  return !publicPaths.some(path => pathname === path || pathname.startsWith(`${path}/`))
+}
+
+/**
+ * Sign in with email/password
+ * Phase 7: New function for login
+ */
+export async function signInWithPassword(email: string, password: string) {
+  const supabase = createBrowserClient()
+  return await supabase.auth.signInWithPassword({ email, password })
+}
+
+/**
+ * Sign up with email/password
+ * Phase 7: New function for registration
+ */
+export async function signUpWithPassword(email: string, password: string, metadata?: { full_name?: string }) {
+  const supabase = createBrowserClient()
+  return await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: metadata,
+    },
+  })
 }

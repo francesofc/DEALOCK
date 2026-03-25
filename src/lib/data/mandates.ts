@@ -1,176 +1,131 @@
 import { Mandate, MandateStatus } from '@/types/database'
 import { createClient } from '@/lib/supabase/client'
 
-// Fallback mock data when Supabase is not available
-const mockMandates: Mandate[] = [
-  {
-    id: 'm1',
-    lead_id: '11111111-1111-1111-1111-111111111111',
-    created_at: '2024-03-15T10:30:00Z',
-    updated_at: '2024-03-15T10:30:00Z',
-    agency_name: 'Premium Real Estate Lyon',
-    exclusive: true,
-    signing_mode: 'electronic',
-    status: 'signed',
-    signed_at: '2024-03-15T10:30:00Z',
-    notes: '6-month exclusive mandate. Full marketing package included.',
-    title: 'Loft Marais',
-    asking_price: 1150000,
-    city: 'Lyon',
-    neighborhood: 'Marais',
-    property_type: 'loft',
-    area_m2: 120,
-    bedrooms: 2,
-  },
-  {
-    id: 'm2',
-    lead_id: '22222222-2222-2222-2222-222222222222',
-    created_at: '2024-03-19T16:00:00Z',
-    updated_at: '2024-03-19T16:00:00Z',
-    agency_name: 'Premium Real Estate Cascais',
-    exclusive: true,
-    signing_mode: 'physical',
-    status: 'sent',
-    signed_at: null,
-    notes: 'Waiting for client to sign and return. Proposed 6 months exclusive.',
-    title: 'Villa Cascais',
-    asking_price: 850000,
-    city: 'Cascais',
-    neighborhood: 'Central',
-    property_type: 'villa',
-    area_m2: 250,
-    bedrooms: 4,
-  },
-  {
-    id: 'm3',
-    lead_id: '33333333-3333-3333-3333-333333333333',
-    created_at: '2024-03-20T11:00:00Z',
-    updated_at: '2024-03-20T11:00:00Z',
-    agency_name: 'Premium Real Estate Paris',
-    exclusive: false,
-    signing_mode: 'electronic',
-    status: 'draft',
-    signed_at: null,
-    notes: 'Non-exclusive option prepared. Client prefers flexibility.',
-    title: 'Apartment Paris 15th',
-    asking_price: 650000,
-    city: 'Paris',
-    neighborhood: '15th Arrondissement',
-    property_type: 'apartment',
-    area_m2: 65,
-    bedrooms: 2,
-  },
-  {
-    id: 'm4',
-    lead_id: '88888888-8888-8888-8888-888888888888',
-    created_at: '2024-01-15T14:00:00Z',
-    updated_at: '2024-01-15T14:00:00Z',
-    agency_name: 'Premium Real Estate Lisbon',
-    exclusive: true,
-    signing_mode: 'electronic',
-    status: 'expired',
-    signed_at: '2024-01-15T14:00:00Z',
-    notes: 'Mandate expired. Client did not renew, went with competitor.',
-    title: 'Lisbon Apartment',
-    asking_price: 450000,
-    city: 'Lisbon',
-    neighborhood: 'Alfama',
-    property_type: 'apartment',
-    area_m2: 85,
-    bedrooms: 2,
-  },
-]
-
 // Check if Supabase is configured
 const isSupabaseConfigured = () => {
   return !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)
 }
 
-export async function getMandates(): Promise<Mandate[]> {
+// Phase 7B: Get current workspace ID
+function getCurrentWorkspaceId(): string | null {
+  if (typeof window === 'undefined') return null
+  return localStorage.getItem('workspace_id')
+}
+
+export async function getMandates(workspaceId?: string | null): Promise<Mandate[]> {
+  const currentWorkspaceId = workspaceId || getCurrentWorkspaceId()
+  
   if (!isSupabaseConfigured()) {
-    return Promise.resolve([...mockMandates].sort((a, b) => 
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    ))
+    return Promise.resolve([])
   }
 
   const supabase = createClient()
-  const { data, error } = await supabase
+  let query = supabase
     .from('mandates')
     .select('*')
     .order('created_at', { ascending: false })
+  
+  // Phase 7B: Enforce workspace filtering
+  if (currentWorkspaceId) {
+    query = query.eq('workspace_id', currentWorkspaceId)
+  }
+
+  const { data, error } = await query
 
   if (error) {
     console.error('Error fetching mandates:', error)
-    return [...mockMandates]
+    return []
   }
 
   return (data || []) as Mandate[]
 }
 
-export async function getMandateById(id: string): Promise<Mandate | null> {
+export async function getMandateById(id: string, workspaceId?: string | null): Promise<Mandate | null> {
+  const currentWorkspaceId = workspaceId || getCurrentWorkspaceId()
+  
   if (!isSupabaseConfigured()) {
-    return Promise.resolve(mockMandates.find(m => m.id === id) || null)
+    return null
   }
 
   const supabase = createClient()
-  const { data, error } = await supabase
+  let query = supabase
     .from('mandates')
     .select('*')
     .eq('id', id)
-    .single()
+  
+  // Phase 7B: Enforce workspace filtering
+  if (currentWorkspaceId) {
+    query = query.eq('workspace_id', currentWorkspaceId)
+  }
+  
+  const { data, error } = await query.single()
 
   if (error) {
-    console.error('Error fetching mandate:', error)
-    return mockMandates.find(m => m.id === id) || null
+    return null
   }
 
   return data as Mandate
 }
 
-export async function getMandateByLeadId(leadId: string): Promise<Mandate | null> {
+export async function getMandateByLeadId(leadId: string, workspaceId?: string | null): Promise<Mandate | null> {
+  const currentWorkspaceId = workspaceId || getCurrentWorkspaceId()
+  
   if (!isSupabaseConfigured()) {
-    return Promise.resolve(mockMandates.find(m => m.lead_id === leadId) || null)
+    return null
   }
 
   const supabase = createClient()
-  const { data, error } = await supabase
+  let query = supabase
     .from('mandates')
     .select('*')
     .eq('lead_id', leadId)
-    .single()
+  
+  // Phase 7B: Enforce workspace filtering
+  if (currentWorkspaceId) {
+    query = query.eq('workspace_id', currentWorkspaceId)
+  }
+  
+  const { data, error } = await query.single()
 
   if (error) {
-    // No mandate found is not an error
     if (error.code === 'PGRST116') return null
-    console.error('Error fetching mandate by lead:', error)
-    return mockMandates.find(m => m.lead_id === leadId) || null
+    return null
   }
 
   return data as Mandate
 }
 
-export async function getMandatesByStatus(status: MandateStatus): Promise<Mandate[]> {
+export async function getMandatesByStatus(status: MandateStatus, workspaceId?: string | null): Promise<Mandate[]> {
+  const currentWorkspaceId = workspaceId || getCurrentWorkspaceId()
+  
   if (!isSupabaseConfigured()) {
-    return Promise.resolve(mockMandates.filter(m => m.status === status))
+    return []
   }
 
   const supabase = createClient()
-  const { data, error } = await supabase
+  let query = supabase
     .from('mandates')
     .select('*')
     .eq('status', status)
     .order('created_at', { ascending: false })
+  
+  // Phase 7B: Enforce workspace filtering
+  if (currentWorkspaceId) {
+    query = query.eq('workspace_id', currentWorkspaceId)
+  }
+
+  const { data, error } = await query
 
   if (error) {
     console.error('Error fetching mandates by status:', error)
-    return mockMandates.filter(m => m.status === status)
+    return []
   }
 
   return (data || []) as Mandate[]
 }
 
-export async function getActiveMandates(): Promise<Mandate[]> {
-  return getMandatesByStatus('signed')
+export async function getActiveMandates(workspaceId?: string | null): Promise<Mandate[]> {
+  return getMandatesByStatus('signed', workspaceId)
 }
 
 // ============================================
@@ -185,7 +140,7 @@ const MANDATE_TO_LEAD_STATUS: Record<MandateStatus, string> = {
   'terminated': 'mandate_proposed',
 };
 
-async function syncLeadStatusWithMandate(leadId: string, mandateStatus: MandateStatus): Promise<void> {
+async function syncLeadStatusWithMandate(leadId: string, mandateStatus: MandateStatus, workspaceId?: string | null): Promise<void> {
   if (!isSupabaseConfigured()) {
     console.warn('Supabase not configured, lead status sync skipped');
     return;
@@ -197,30 +152,47 @@ async function syncLeadStatusWithMandate(leadId: string, mandateStatus: MandateS
     return;
   }
 
+  const currentWorkspaceId = workspaceId || getCurrentWorkspaceId()
+  
   const supabase = createClient();
-  const { error } = await (supabase as any)
+  
+  let query = (supabase as any)
     .from('leads')
     .update({ status: newStatus, updated_at: new Date().toISOString() })
     .eq('id', leadId);
+  
+  // Phase 7B: Enforce workspace isolation
+  if (currentWorkspaceId) {
+    query = query.eq('workspace_id', currentWorkspaceId);
+  }
+  
+  const { error } = await query;
 
   if (error) {
     console.error(`Failed to sync lead ${leadId} status to ${newStatus}:`, error);
-    // Don't throw - mandate creation should succeed even if sync fails
   } else {
     console.log(`Synced lead ${leadId} status to ${newStatus}`);
   }
 }
 
-export async function createMandate(mandate: Mandate): Promise<void> {
+export async function createMandate(mandate: Mandate, workspaceId?: string | null): Promise<void> {
+  const currentWorkspaceId = workspaceId || getCurrentWorkspaceId()
+  
   if (!isSupabaseConfigured()) {
-    console.warn('Supabase not configured, mandate created in memory only')
-    mockMandates.push(mandate)
-    return Promise.resolve()
+    console.warn('Supabase not configured, mandate not created')
+    throw new Error('Supabase not configured')
+  }
+
+  // Phase 7B: Require workspace context
+  if (!currentWorkspaceId) {
+    console.error('[Data Isolation] createMandate blocked: No workspace context')
+    throw new Error('No workspace context. Cannot create mandate.')
   }
 
   const supabase = createClient()
   const insertData = {
     id: mandate.id,
+    workspace_id: currentWorkspaceId, // Phase 7B: Associate with workspace
     lead_id: mandate.lead_id,
     agency_name: mandate.agency_name,
     exclusive: mandate.exclusive,
@@ -247,17 +219,15 @@ export async function createMandate(mandate: Mandate): Promise<void> {
   }
 
   // CENTRALIZED: Always sync lead status after mandate creation
-  await syncLeadStatusWithMandate(mandate.lead_id, mandate.status);
+  await syncLeadStatusWithMandate(mandate.lead_id, mandate.status, currentWorkspaceId);
 }
 
-export async function updateMandate(mandate: Mandate): Promise<void> {
+export async function updateMandate(mandate: Mandate, workspaceId?: string | null): Promise<void> {
+  const currentWorkspaceId = workspaceId || getCurrentWorkspaceId()
+  
   if (!isSupabaseConfigured()) {
-    console.warn('Supabase not configured, mandate updated in memory only')
-    const index = mockMandates.findIndex(m => m.id === mandate.id)
-    if (index !== -1) {
-      mockMandates[index] = { ...mandate, updated_at: new Date().toISOString() }
-    }
-    return Promise.resolve()
+    console.warn('Supabase not configured, mandate not updated')
+    throw new Error('Supabase not configured')
   }
 
   const supabase = createClient()
@@ -279,10 +249,17 @@ export async function updateMandate(mandate: Mandate): Promise<void> {
     updated_at: new Date().toISOString(),
   }
 
-  const { error } = await (supabase as any)
+  let query = (supabase as any)
     .from('mandates')
     .update(updateData)
     .eq('id', mandate.id)
+  
+  // Phase 7B: Enforce workspace isolation
+  if (currentWorkspaceId) {
+    query = query.eq('workspace_id', currentWorkspaceId)
+  }
+
+  const { error } = await query
 
   if (error) {
     console.error('Error updating mandate:', error)
@@ -290,21 +267,29 @@ export async function updateMandate(mandate: Mandate): Promise<void> {
   }
 
   // CENTRALIZED: Always sync lead status after mandate update
-  await syncLeadStatusWithMandate(mandate.lead_id, mandate.status);
+  await syncLeadStatusWithMandate(mandate.lead_id, mandate.status, currentWorkspaceId);
 }
 
-export async function deleteMandate(id: string): Promise<void> {
+export async function deleteMandate(id: string, workspaceId?: string | null): Promise<void> {
+  const currentWorkspaceId = workspaceId || getCurrentWorkspaceId()
+  
   if (!isSupabaseConfigured()) {
-    const index = mockMandates.findIndex(m => m.id === id)
-    if (index !== -1) mockMandates.splice(index, 1)
-    return Promise.resolve()
+    return
   }
 
   const supabase = createClient()
-  const { error } = await supabase
+  
+  let query = supabase
     .from('mandates')
     .delete()
     .eq('id', id)
+  
+  // Phase 7B: Enforce workspace isolation
+  if (currentWorkspaceId) {
+    query = query.eq('workspace_id', currentWorkspaceId)
+  }
+  
+  const { error } = await query
 
   if (error) {
     console.error('Error deleting mandate:', error)
@@ -324,6 +309,8 @@ export async function backfillLeadStatusesFromMandates(): Promise<{ updated: num
     return result;
   }
 
+  const currentWorkspaceId = getCurrentWorkspaceId()
+  
   const supabase = createClient();
   
   // Map mandate status to lead status
@@ -336,10 +323,14 @@ export async function backfillLeadStatusesFromMandates(): Promise<{ updated: num
   };
   
   try {
-    // Get all mandates
-    const { data: mandatesData, error: mandatesError } = await supabase
-      .from('mandates')
-      .select('id, lead_id, status');
+    // Get all mandates for workspace
+    let query = supabase.from('mandates').select('id, lead_id, status');
+    
+    if (currentWorkspaceId) {
+      query = query.eq('workspace_id', currentWorkspaceId);
+    }
+    
+    const { data: mandatesData, error: mandatesError } = await query;
     
     if (mandatesError) {
       result.errors.push(`Failed to fetch mandates: ${mandatesError.message}`);
@@ -351,10 +342,16 @@ export async function backfillLeadStatusesFromMandates(): Promise<{ updated: num
       if (!newStatus) continue;
       
       // Update the related lead
-      const { error: updateError } = await (supabase as any)
+      let updateQuery = (supabase as any)
         .from('leads')
         .update({ status: newStatus, updated_at: new Date().toISOString() })
         .eq('id', mandate.lead_id);
+      
+      if (currentWorkspaceId) {
+        updateQuery = updateQuery.eq('workspace_id', currentWorkspaceId);
+      }
+      
+      const { error: updateError } = await updateQuery;
       
       if (updateError) {
         result.errors.push(`Failed to update lead ${mandate.lead_id}: ${updateError.message}`);

@@ -7,6 +7,7 @@ const mockLeads: Lead[] = [
     id: '11111111-1111-1111-1111-111111111111',
     created_at: '2024-03-10T08:00:00Z',
     updated_at: '2024-03-20T14:30:00Z',
+    workspace_id: null,
     owner_name: 'Marie Dupont',
     email: 'marie.dupont@email.com',
     phone: '+33 6 12 34 56 78',
@@ -34,6 +35,7 @@ const mockLeads: Lead[] = [
     id: '22222222-2222-2222-2222-222222222222',
     created_at: '2024-03-12T10:00:00Z',
     updated_at: '2024-03-19T16:00:00Z',
+    workspace_id: null,
     owner_name: 'João Silva',
     email: 'joao.silva@email.com',
     phone: '+351 912 345 678',
@@ -61,6 +63,7 @@ const mockLeads: Lead[] = [
     id: '33333333-3333-3333-3333-333333333333',
     created_at: '2024-03-14T09:00:00Z',
     updated_at: '2024-03-20T11:00:00Z',
+    workspace_id: null,
     owner_name: 'Emma Johnson',
     email: 'emma.johnson@email.com',
     phone: '+44 7700 900123',
@@ -88,6 +91,7 @@ const mockLeads: Lead[] = [
     id: '44444444-4444-4444-4444-444444444444',
     created_at: '2024-03-08T14:00:00Z',
     updated_at: '2024-03-18T10:00:00Z',
+    workspace_id: null,
     owner_name: 'Carlos Mendes',
     email: 'carlos.mendes@email.com',
     phone: '+351 923 456 789',
@@ -115,6 +119,7 @@ const mockLeads: Lead[] = [
     id: '55555555-5555-5555-5555-555555555555',
     created_at: '2024-03-16T11:00:00Z',
     updated_at: '2024-03-20T09:00:00Z',
+    workspace_id: null,
     owner_name: 'Sophie Martin',
     email: 'sophie.martin@email.com',
     phone: '+33 6 98 76 54 32',
@@ -142,6 +147,7 @@ const mockLeads: Lead[] = [
     id: '66666666-6666-6666-6666-666666666666',
     created_at: '2024-03-15T13:00:00Z',
     updated_at: '2024-03-19T15:00:00Z',
+    workspace_id: null,
     owner_name: 'Lucas Pereira',
     email: 'lucas.pereira@email.com',
     phone: '+351 934 567 890',
@@ -169,6 +175,7 @@ const mockLeads: Lead[] = [
     id: '77777777-7777-7777-7777-777777777777',
     created_at: '2024-03-20T08:00:00Z',
     updated_at: '2024-03-20T08:00:00Z',
+    workspace_id: null,
     owner_name: 'Ana Costa',
     email: 'ana.costa@email.com',
     phone: '+351 945 678 901',
@@ -196,6 +203,7 @@ const mockLeads: Lead[] = [
     id: '88888888-8888-8888-8888-888888888888',
     created_at: '2024-03-01T09:00:00Z',
     updated_at: '2024-03-15T10:00:00Z',
+    workspace_id: null,
     owner_name: 'Pedro Santos',
     email: 'pedro.santos@email.com',
     phone: '+351 956 789 012',
@@ -226,17 +234,32 @@ const isSupabaseConfigured = () => {
   return !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)
 }
 
-// Data service functions
-export async function getLeads(): Promise<Lead[]> {
+// Phase 7: Get current workspace ID from localStorage
+function getCurrentWorkspaceId(): string | null {
+  if (typeof window === 'undefined') return null
+  return localStorage.getItem('workspace_id')
+}
+
+// Data service functions with workspace scoping (Phase 7)
+export async function getLeads(workspaceId?: string | null): Promise<Lead[]> {
+  const currentWorkspaceId = workspaceId || getCurrentWorkspaceId()
+  
   if (!isSupabaseConfigured()) {
     return Promise.resolve([...mockLeads])
   }
 
   const supabase = createClient()
-  const { data, error } = await supabase
+  let query = supabase
     .from('leads')
     .select('*')
     .order('created_at', { ascending: false })
+  
+  // Phase 7: Filter by workspace if available
+  if (currentWorkspaceId) {
+    query = query.eq('workspace_id', currentWorkspaceId)
+  }
+  
+  const { data, error } = await query
   
   if (error) {
     console.error('Error fetching leads:', error)
@@ -251,18 +274,26 @@ export async function getLeads(): Promise<Lead[]> {
   return data as Lead[]
 }
 
-export async function getLeadById(id: string): Promise<Lead | null> {
+export async function getLeadById(id: string, workspaceId?: string | null): Promise<Lead | null> {
+  const currentWorkspaceId = workspaceId || getCurrentWorkspaceId()
+  
   if (!isSupabaseConfigured()) {
     const lead = mockLeads.find(l => l.id === id)
     return Promise.resolve(lead || null)
   }
 
   const supabase = createClient()
-  const { data, error } = await supabase
+  let query = supabase
     .from('leads')
     .select('*')
     .eq('id', id)
-    .single()
+  
+  // Phase 7: Filter by workspace if available
+  if (currentWorkspaceId) {
+    query = query.eq('workspace_id', currentWorkspaceId)
+  }
+  
+  const { data, error } = await query.single()
   
   if (error) {
     // If not found in Supabase, check mock data
@@ -273,7 +304,9 @@ export async function getLeadById(id: string): Promise<Lead | null> {
   return data as Lead
 }
 
-export async function createLead(lead: Lead): Promise<void> {
+export async function createLead(lead: Lead, workspaceId?: string | null): Promise<void> {
+  const currentWorkspaceId = workspaceId || getCurrentWorkspaceId()
+  
   if (!isSupabaseConfigured()) {
     console.warn('Supabase not configured, lead created in memory only')
     return Promise.resolve()
@@ -282,6 +315,7 @@ export async function createLead(lead: Lead): Promise<void> {
   const supabase = createClient()
   const insertData = {
     id: lead.id,
+    workspace_id: currentWorkspaceId, // Phase 7: Associate with workspace
     owner_name: lead.owner_name,
     email: lead.email,
     phone: lead.phone,
@@ -315,7 +349,9 @@ export async function createLead(lead: Lead): Promise<void> {
   }
 }
 
-export async function updateLead(lead: Lead): Promise<void> {
+export async function updateLead(lead: Lead, workspaceId?: string | null): Promise<void> {
+  const currentWorkspaceId = workspaceId || getCurrentWorkspaceId()
+  
   if (!isSupabaseConfigured()) {
     console.warn('Supabase not configured, lead updated in memory only')
     return Promise.resolve()
@@ -347,10 +383,18 @@ export async function updateLead(lead: Lead): Promise<void> {
     notes: lead.notes,
     updated_at: new Date().toISOString(),
   }
-  const { error } = await (supabase as any)
+  
+  let query = (supabase as any)
     .from('leads')
     .update(updateData)
     .eq('id', lead.id)
+  
+  // Phase 7: Ensure workspace isolation on update
+  if (currentWorkspaceId) {
+    query = query.eq('workspace_id', currentWorkspaceId)
+  }
+  
+  const { error } = await query
   
   if (error) {
     console.error('Error updating lead:', error)
@@ -358,18 +402,27 @@ export async function updateLead(lead: Lead): Promise<void> {
   }
 }
 
-export async function getLeadsByStatus(status: LeadStatus): Promise<Lead[]> {
+export async function getLeadsByStatus(status: LeadStatus, workspaceId?: string | null): Promise<Lead[]> {
+  const currentWorkspaceId = workspaceId || getCurrentWorkspaceId()
+  
   if (!isSupabaseConfigured()) {
     const leads = mockLeads.filter(l => l.status === status)
     return Promise.resolve([...leads])
   }
 
   const supabase = createClient()
-  const { data, error } = await supabase
+  let query = supabase
     .from('leads')
     .select('*')
     .eq('status', status)
     .order('created_at', { ascending: false })
+  
+  // Phase 7: Filter by workspace if available
+  if (currentWorkspaceId) {
+    query = query.eq('workspace_id', currentWorkspaceId)
+  }
+  
+  const { data, error } = await query
   
   if (error) {
     console.error('Error fetching leads by status:', error)
@@ -379,7 +432,9 @@ export async function getLeadsByStatus(status: LeadStatus): Promise<Lead[]> {
   return (data || []) as Lead[]
 }
 
-export async function updateLeadStatus(id: string, status: LeadStatus): Promise<void> {
+export async function updateLeadStatus(id: string, status: LeadStatus, workspaceId?: string | null): Promise<void> {
+  const currentWorkspaceId = workspaceId || getCurrentWorkspaceId()
+  
   if (!isSupabaseConfigured()) {
     const lead = mockLeads.find(l => l.id === id)
     if (lead) {
@@ -390,10 +445,18 @@ export async function updateLeadStatus(id: string, status: LeadStatus): Promise<
   }
 
   const supabase = createClient()
-  const { error } = await (supabase as any)
+  
+  let query = (supabase as any)
     .from('leads')
     .update({ status, updated_at: new Date().toISOString() })
     .eq('id', id)
+  
+  // Phase 7: Ensure workspace isolation
+  if (currentWorkspaceId) {
+    query = query.eq('workspace_id', currentWorkspaceId)
+  }
+  
+  const { error } = await query
   
   if (error) {
     console.error('Error updating lead status:', error)

@@ -28,6 +28,7 @@ export interface Lead {
   id: string
   created_at: string
   updated_at: string
+  workspace_id?: string | null  // Phase 7: Workspace isolation (optional)
   owner_name: string
   email: string
   phone: string
@@ -78,6 +79,7 @@ export interface Buyer {
   id: string
   created_at: string
   updated_at: string
+  workspace_id?: string | null  // Phase 7: Workspace isolation (optional)
   name: string
   email: string
   phone: string
@@ -130,6 +132,7 @@ export interface MatchOpportunity {
   id: string
   created_at: string
   updated_at: string
+  workspace_id?: string | null  // Phase 7: Workspace isolation (optional)
   
   // Core relationships (new schema)
   buyer_id: string
@@ -190,6 +193,7 @@ export interface FinanceProfile {
   id: string
   created_at: string
   updated_at: string
+  workspace_id?: string | null  // Phase 7: Workspace isolation (optional)
   buyer_id: string
   
   // Status
@@ -229,6 +233,7 @@ export type ActivityType = 'call' | 'email' | 'whatsapp' | 'meeting' | 'note' | 
 export interface Activity {
   id: string
   created_at: string
+  workspace_id?: string | null  // Phase 7: Workspace isolation (optional for compatibility)
   type: ActivityType
   content: string
   operator_name: string
@@ -253,6 +258,7 @@ export interface Mandate {
   lead_id: string
   created_at: string
   updated_at: string
+  workspace_id?: string | null  // Phase 7: Workspace isolation (optional)
   agency_name: string
   exclusive: boolean
   signing_mode: SigningMode

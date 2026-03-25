@@ -4,6 +4,7 @@ import "./globals.css";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
 import { LanguageProvider } from "@/components/providers/LanguageProvider";
+import { WorkspaceProvider } from "@/lib/workspace/WorkspaceContext";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -21,15 +22,17 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <LanguageProvider>
-          <div className="flex h-screen bg-background">
-            <Sidebar />
-            <div className="flex-1 flex flex-col min-w-0">
-              <Header />
-              <main className="flex-1 overflow-auto p-8">
-                {children}
-              </main>
+          <WorkspaceProvider>
+            <div className="flex h-screen bg-background">
+              <Sidebar />
+              <div className="flex-1 flex flex-col min-w-0">
+                <Header />
+                <main className="flex-1 overflow-auto p-8">
+                  {children}
+                </main>
+              </div>
             </div>
-          </div>
+          </WorkspaceProvider>
         </LanguageProvider>
       </body>
     </html>

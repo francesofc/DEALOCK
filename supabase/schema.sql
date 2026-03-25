@@ -155,6 +155,7 @@ CREATE TABLE leads (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
+  workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
   owner_name TEXT NOT NULL,
   email TEXT NOT NULL DEFAULT '',
   phone TEXT NOT NULL,
@@ -184,6 +185,7 @@ CREATE TABLE buyers (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
+  workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   email TEXT NOT NULL DEFAULT '',
   phone TEXT NOT NULL DEFAULT '',
@@ -210,6 +212,7 @@ CREATE TABLE finance_profiles (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
+  workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
   buyer_id UUID REFERENCES buyers(id) ON DELETE CASCADE NOT NULL,
   status finance_status DEFAULT 'incomplete',
   documents JSONB DEFAULT '[]',
@@ -232,6 +235,7 @@ CREATE TABLE finance_profiles (
 CREATE TABLE activities (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   created_at TIMESTAMPTZ DEFAULT NOW(),
+  workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
   type activity_type NOT NULL,
   content TEXT NOT NULL,
   operator_name TEXT NOT NULL DEFAULT 'System',
@@ -244,8 +248,9 @@ CREATE TABLE activities (
 -- AI Outputs table
 CREATE TABLE ai_outputs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  lead_id UUID REFERENCES leads(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ DEFAULT NOW(),
+  workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
+  lead_id UUID REFERENCES leads(id) ON DELETE CASCADE,
   recommended_language language_preference NOT NULL,
   angle TEXT NOT NULL,
   message_initial_fr TEXT NOT NULL,
@@ -273,8 +278,9 @@ CREATE TABLE ai_outputs (
 -- Mandates table
 CREATE TABLE mandates (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  lead_id UUID REFERENCES leads(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ DEFAULT NOW(),
+  workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
+  lead_id UUID REFERENCES leads(id) ON DELETE CASCADE,
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   agency_name TEXT NOT NULL DEFAULT 'Dealock Agency',
   exclusive BOOLEAN DEFAULT true,
@@ -297,6 +303,7 @@ CREATE TABLE match_opportunities (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
+  workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
   -- Core relationships
   buyer_id UUID REFERENCES buyers(id) ON DELETE CASCADE NOT NULL,
   target_type target_type NOT NULL,
@@ -347,7 +354,7 @@ CREATE INDEX idx_match_opportunities_status ON match_opportunities(status);
 CREATE INDEX idx_match_opportunities_score ON match_opportunities(score_value DESC);
 
 -- ============================================
--- ROW LEVEL SECURITY
+-- ROW LEVEL SECURITY (Phase 7B: Real workspace isolation)
 -- ============================================
 
 ALTER TABLE leads ENABLE ROW LEVEL SECURITY;
@@ -357,15 +364,52 @@ ALTER TABLE activities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_outputs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE mandates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE match_opportunities ENABLE ROW LEVEL SECURITY;
+ALTER TABLE import_sessions ENABLE ROW LEVEL SECURITY;
 
--- For Phase 2: Allow all access (will be restricted with auth later)
-CREATE POLICY "Allow all" ON leads FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all" ON buyers FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all" ON finance_profiles FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all" ON activities FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all" ON ai_outputs FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all" ON mandates FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all" ON match_opportunities FOR ALL USING (true) WITH CHECK (true);
+-- Helper function: Get current user's workspace_id
+CREATE OR REPLACE FUNCTION get_current_user_workspace()
+RETURNS UUID AS $$
+DECLARE
+  ws_id UUID;
+BEGIN
+  SELECT workspace_id INTO ws_id
+  FROM profiles
+  WHERE id = auth.uid();
+  RETURN ws_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Leads: Users can only access leads in their workspace
+CREATE POLICY "Workspace isolation for leads" ON leads
+  FOR ALL USING (workspace_id = get_current_user_workspace()) WITH CHECK (workspace_id = get_current_user_workspace());
+
+-- Buyers: Users can only access buyers in their workspace
+CREATE POLICY "Workspace isolation for buyers" ON buyers
+  FOR ALL USING (workspace_id = get_current_user_workspace()) WITH CHECK (workspace_id = get_current_user_workspace());
+
+-- Finance Profiles: Users can only access profiles in their workspace
+CREATE POLICY "Workspace isolation for finance_profiles" ON finance_profiles
+  FOR ALL USING (workspace_id = get_current_user_workspace()) WITH CHECK (workspace_id = get_current_user_workspace());
+
+-- Activities: Users can only access activities in their workspace
+CREATE POLICY "Workspace isolation for activities" ON activities
+  FOR ALL USING (workspace_id = get_current_user_workspace()) WITH CHECK (workspace_id = get_current_user_workspace());
+
+-- AI Outputs: Users can only access outputs in their workspace
+CREATE POLICY "Workspace isolation for ai_outputs" ON ai_outputs
+  FOR ALL USING (workspace_id = get_current_user_workspace()) WITH CHECK (workspace_id = get_current_user_workspace());
+
+-- Mandates: Users can only access mandates in their workspace
+CREATE POLICY "Workspace isolation for mandates" ON mandates
+  FOR ALL USING (workspace_id = get_current_user_workspace()) WITH CHECK (workspace_id = get_current_user_workspace());
+
+-- Match Opportunities: Users can only access matches in their workspace
+CREATE POLICY "Workspace isolation for match_opportunities" ON match_opportunities
+  FOR ALL USING (workspace_id = get_current_user_workspace()) WITH CHECK (workspace_id = get_current_user_workspace());
+
+-- Import Sessions: Users can only access imports in their workspace
+CREATE POLICY "Workspace isolation for import_sessions" ON import_sessions
+  FOR ALL USING (workspace_id = get_current_user_workspace()) WITH CHECK (workspace_id = get_current_user_workspace());
 
 -- ============================================
 -- AUTO-UPDATE TRIGGERS
@@ -482,6 +526,62 @@ CREATE INDEX idx_workspaces_onboarding_status ON workspaces(onboarding_status);
 CREATE INDEX idx_workspaces_is_active ON workspaces(is_active);
 CREATE INDEX idx_workspace_activities_workspace_id ON workspace_activities(workspace_id);
 
+-- ============================================
+-- PROFILES TABLE (Phase 7B: User-Workspace linkage)
+-- ============================================
+
+-- Profiles table links auth.users to workspaces
+CREATE TABLE profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  
+  -- User info
+  full_name TEXT,
+  avatar_url TEXT,
+  
+  -- Role (simple for pilot: admin/agent/viewer)
+  role TEXT DEFAULT 'admin' CHECK (role IN ('admin', 'agent', 'viewer')),
+  
+  -- Workspace linkage (critical for isolation)
+  workspace_id UUID REFERENCES workspaces(id) ON DELETE SET NULL,
+  
+  -- Preferences
+  language_preference TEXT DEFAULT 'en'
+);
+
+-- Index for workspace lookups
+CREATE INDEX idx_profiles_workspace_id ON profiles(workspace_id);
+
+-- Enable RLS on profiles
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+
+-- Profiles policies
+CREATE POLICY "Users can view own profile" ON profiles
+  FOR SELECT USING (auth.uid() = id);
+
+CREATE POLICY "Users can update own profile" ON profiles
+  FOR UPDATE USING (auth.uid() = id);
+
+-- Trigger to update profiles updated_at
+CREATE TRIGGER update_profiles_updated_at 
+  BEFORE UPDATE ON profiles 
+  FOR EACH ROW 
+  EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================
+-- WORKSPACE_ID INDEXES (Phase 7B: Query performance)
+-- ============================================
+
+CREATE INDEX idx_leads_workspace_id ON leads(workspace_id);
+CREATE INDEX idx_buyers_workspace_id ON buyers(workspace_id);
+CREATE INDEX idx_finance_profiles_workspace_id ON finance_profiles(workspace_id);
+CREATE INDEX idx_activities_workspace_id ON activities(workspace_id);
+CREATE INDEX idx_ai_outputs_workspace_id ON ai_outputs(workspace_id);
+CREATE INDEX idx_mandates_workspace_id ON mandates(workspace_id);
+CREATE INDEX idx_match_opportunities_workspace_id ON match_opportunities(workspace_id);
+CREATE INDEX idx_import_sessions_workspace_id ON import_sessions(workspace_id);
+
 -- Enable realtime for workspaces
 ALTER PUBLICATION supabase_realtime ADD TABLE workspaces;
 
@@ -497,9 +597,16 @@ ALTER TABLE workspaces ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow all workspaces" ON workspaces;
 DROP POLICY IF EXISTS "Allow all workspace_activities" ON workspace_activities;
 
--- Create permissive policies for Phase 2
-CREATE POLICY "Allow all workspaces" ON workspaces FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all workspace_activities" ON workspace_activities FOR ALL USING (true) WITH CHECK (true);
+-- Phase 7B: Workspaces - Users can only see their linked workspace
+CREATE POLICY "Users can view own workspace" ON workspaces
+  FOR SELECT USING (id = get_current_user_workspace());
+
+CREATE POLICY "Users can update own workspace" ON workspaces
+  FOR UPDATE USING (id = get_current_user_workspace());
+
+-- Phase 7B: Workspace activities - Users can only see activities in their workspace
+CREATE POLICY "Workspace isolation for workspace_activities" ON workspace_activities
+  FOR ALL USING (workspace_id = get_current_user_workspace()) WITH CHECK (workspace_id = get_current_user_workspace());
 
 
 -- ============================================
@@ -517,6 +624,7 @@ CREATE TYPE import_status AS ENUM (
 CREATE TABLE import_sessions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   created_at TIMESTAMPTZ DEFAULT NOW(),
+  workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
   
   -- Import metadata
   entity_type TEXT NOT NULL CHECK (entity_type IN ('seller', 'buyer')),
