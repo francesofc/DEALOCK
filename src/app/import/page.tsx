@@ -24,14 +24,29 @@ import {
   EyeOff,
   Eye,
   RefreshCw,
-  Check,
+  AlertTriangle,
+  FileX,
+  Info,
 } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
 import Papa from "papaparse";
-import { createLead } from "@/lib/data/leads";
-import { createClient } from "@/lib/supabase/client";
-import { createImportSession, getRecentImportSessions, ImportSession } from "@/lib/data/import-sessions";
-import { createBuyer } from "@/lib/data/buyers";
+import { createImportSession, getRecentImportSessions, ImportSession, getImportStatusVariant, formatImportSession } from "@/lib/data/import-sessions";
+import { useWorkspace } from "@/lib/workspace/WorkspaceContext";
+import {
+  executeImport,
+  determineImportStatus,
+  generateReportByType,
+  downloadCSV,
+  generateSellerTemplate,
+  generateBuyerTemplate,
+  formatImportSummary,
+  checkEdgeCases,
+  checkImportEdgeCases,
+  getRowImportError,
+  type FailedRow,
+  type ReportRow,
+  type EdgeCaseCheck,
+} from "@/lib/import";
 
 // ============================================
 // TYPES
@@ -39,7 +54,7 @@ import { createBuyer } from "@/lib/data/buyers";
 
 type ImportStep = "upload" | "preview" | "validate" | "results";
 type EntityType = "seller" | "buyer";
-type FilterType = "all" | "ready" | "invalid" | "inFile" | "inDb" | "ignored";
+type FilterType = "all" | "ready" | "invalid" | "inFile" | "inDb" | "ignored" | "failed";
 
 interface CSVRow {
   [key: string]: string;
@@ -58,6 +73,7 @@ interface ValidationResult {
   isDuplicateInFile: boolean;
   isDuplicateInDb: boolean;
   duplicateField?: 'email' | 'phone' | 'both';
+  duplicateOf?: number;
   ignored: boolean;
 }
 
@@ -70,6 +86,7 @@ interface ImportSummary {
   ignored: number;
   readyToImport: number;
   imported: number;
+  failed: number;
 }
 
 // ============================================
@@ -185,6 +202,8 @@ function parsePrice(priceStr: string): number | null {
 // DATABASE DUPLICATE CHECK
 // ============================================
 
+import { createClient } from "@/lib/supabase/client";
+
 async function checkExistingSeller(email: string, phone: string): Promise<{ exists: boolean; field?: 'email' | 'phone' | 'both' }> {
   if (!email && !phone) return { exists: false };
   const supabase = createClient();
@@ -275,6 +294,12 @@ export default function ImportPage() {
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
   const [importHistory, setImportHistory] = useState<ImportSession[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [edgeCase, setEdgeCase] = useState<EdgeCaseCheck | null>(null);
+  const [failedRows, setFailedRows] = useState<FailedRow[]>([]);
+  const [importProgress, setImportProgress] = useState<{ processed: number; total: number } | null>(null);
+  
+  // Phase 7: Get workspace context for data isolation
+  const { workspaceId } = useWorkspace();
 
   const fields = entityType === "seller" ? SELLER_FIELDS : BUYER_FIELDS;
   const nameField = entityType === "seller" ? "owner_name" : "name";
@@ -304,6 +329,9 @@ export default function ImportPage() {
     setFileName("");
     setFilter("all");
     setSelectedRows(new Set());
+    setEdgeCase(null);
+    setFailedRows([]);
+    setImportProgress(null);
   };
 
   // ============================================
@@ -331,9 +359,24 @@ export default function ImportPage() {
         }
         const data = results.data as CSVRow[];
         const cols = results.meta.fields || [];
+        
+        // Check for edge cases
+        const mapping = detectColumnMapping(cols, fields);
+        const edgeCaseCheck = checkEdgeCases(data, cols, mapping);
+        
+        if (!edgeCaseCheck.canProceed) {
+          setEdgeCase(edgeCaseCheck);
+          setRawData(data);
+          setHeaders(cols);
+          setColumnMapping(mapping);
+          setStep("preview");
+          return;
+        }
+        
         setRawData(data);
         setHeaders(cols);
-        setColumnMapping(detectColumnMapping(cols, fields));
+        setColumnMapping(mapping);
+        setEdgeCase(edgeCaseCheck.isEdgeCase ? edgeCaseCheck : null);
         setStep("preview");
       },
       error: () => alert(t.import.errors.parseFailed),
@@ -373,7 +416,7 @@ export default function ImportPage() {
   // STEP 3: VALIDATE
   // ============================================
 
-  const validateRow = useCallback(async (data: Record<string, unknown>, seenEmails: Set<string>): Promise<Omit<ValidationResult, 'row' | 'ignored'>> => {
+  const validateRow = useCallback(async (data: Record<string, unknown>, seenEmails: Map<string, number>): Promise<Omit<ValidationResult, 'row' | 'ignored'>> => {
     const errors: string[] = [];
     
     const hasName = !!(data[nameField] as string)?.trim();
@@ -382,19 +425,21 @@ export default function ImportPage() {
 
     if (!hasName) errors.push(entityType === "seller" ? "Missing seller name" : "Missing buyer name");
     if (!hasEmail && !hasPhone) errors.push("Missing email and phone");
-    if (hasEmail && !validateEmail(data.email as string)) errors.push("Invalid email");
-    if (hasPhone && !validatePhone(data.phone as string)) errors.push("Invalid phone");
+    if (hasEmail && !validateEmail(data.email as string)) errors.push("Invalid email format");
+    if (hasPhone && !validatePhone(data.phone as string)) errors.push("Invalid phone format");
 
-    const email = (data.email as string)?.toLowerCase();
+    const email = (data.email as string)?.toLowerCase().trim();
     let isDuplicateInFile = false;
     let fileDuplicateField: 'email' | 'phone' | 'both' | undefined;
+    let duplicateOf: number | undefined;
     
     if (email) {
       if (seenEmails.has(email)) {
         isDuplicateInFile = true;
         fileDuplicateField = 'email';
+        duplicateOf = seenEmails.get(email);
       } else {
-        seenEmails.add(email);
+        seenEmails.set(email, -1); // Temporary, will be set to actual row index
       }
     }
 
@@ -415,13 +460,14 @@ export default function ImportPage() {
       isDuplicateInFile,
       isDuplicateInDb,
       duplicateField: isDuplicateInDb ? dbDuplicateField : isDuplicateInFile ? fileDuplicateField : undefined,
+      duplicateOf,
     };
   }, [entityType, nameField]);
 
   const runValidation = useCallback(async () => {
     setIsValidating(true);
     const results: ValidationResult[] = [];
-    const seenEmails = new Set<string>();
+    const seenEmails = new Map<string, number>();
 
     for (let index = 0; index < rawData.length; index++) {
       const row = rawData[index];
@@ -450,19 +496,39 @@ export default function ImportPage() {
       });
 
       const validation = await validateRow(data, seenEmails);
+      
+      // Update seenEmails with actual row index
+      const email = (data.email as string)?.toLowerCase().trim();
+      if (email) {
+        seenEmails.set(email, index);
+      }
+      
       results.push({ row: rowNum, ...validation, ignored: false });
     }
 
     setValidationResults(results);
-    updateSummary(results);
+    updateSummary(results, 0, []);
+    
+    // Check for import edge cases (all invalid, all duplicates, all ignored)
+    const summary = calculateSummary(results, 0, []);
+    const importEdgeCase = checkImportEdgeCases(
+      summary.total,
+      summary.invalid,
+      summary.fileDuplicates,
+      summary.dbDuplicates,
+      summary.ignored,
+      summary.readyToImport
+    );
+    
+    setEdgeCase(importEdgeCase.isEdgeCase ? importEdgeCase : null);
     setStep("validate");
     setIsValidating(false);
   }, [rawData, columnMapping, entityType, validateRow]);
 
-  const updateSummary = (results: ValidationResult[]) => {
+  const calculateSummary = (results: ValidationResult[], imported: number, failedRows: FailedRow[]): ImportSummary => {
     const valid = results.filter(r => r.isValid && !r.ignored).length;
     const ignored = results.filter(r => r.ignored).length;
-    setSummary({
+    return {
       total: results.length,
       valid,
       invalid: results.filter(r => !r.isValid && !r.isDuplicateInFile && !r.isDuplicateInDb && !r.ignored).length,
@@ -470,8 +536,13 @@ export default function ImportPage() {
       dbDuplicates: results.filter(r => r.isDuplicateInDb && !r.ignored).length,
       ignored,
       readyToImport: valid,
-      imported: 0,
-    });
+      imported,
+      failed: failedRows.length,
+    };
+  };
+
+  const updateSummary = (results: ValidationResult[], imported: number, failedRows: FailedRow[]) => {
+    setSummary(calculateSummary(results, imported, failedRows));
   };
 
   // ============================================
@@ -482,7 +553,6 @@ export default function ImportPage() {
     setValidationResults(prev => {
       const updated = [...prev];
       updated[rowIndex] = { ...updated[rowIndex], data: { ...updated[rowIndex].data, [field]: value } };
-      // Revalidate immediately after edit
       setTimeout(() => revalidateRow(rowIndex), 0);
       return updated;
     });
@@ -490,9 +560,14 @@ export default function ImportPage() {
 
   const revalidateRow = async (rowIndex: number) => {
     const row = validationResults[rowIndex];
-    const seenEmails = new Set<string>(validationResults
-      .filter((r, i) => i !== rowIndex && r.data.email)
-      .map(r => (r.data.email as string).toLowerCase()));
+    const seenEmails = new Map<string, number>();
+    
+    // Build seenEmails from all other rows
+    validationResults.forEach((r, i) => {
+      if (i !== rowIndex && r.data.email) {
+        seenEmails.set((r.data.email as string).toLowerCase().trim(), i);
+      }
+    });
     
     const validation = await validateRow(row.data, seenEmails);
     
@@ -502,7 +577,7 @@ export default function ImportPage() {
       return updated;
     });
     
-    updateSummary(validationResults.map((r, i) => i === rowIndex ? { ...r, ...validation } : r));
+    updateSummary(validationResults.map((r, i) => i === rowIndex ? { ...r, ...validation } : r), 0, failedRows);
   };
 
   const toggleIgnoreRow = (rowIndex: number) => {
@@ -541,12 +616,10 @@ export default function ImportPage() {
     const allSelected = visibleIndices.every(i => selectedRows.has(i));
     
     if (allSelected) {
-      // Deselect all visible
       const newSelected = new Set(selectedRows);
       visibleIndices.forEach(i => newSelected.delete(i));
       setSelectedRows(newSelected);
     } else {
-      // Select all visible
       const newSelected = new Set(selectedRows);
       visibleIndices.forEach(i => newSelected.add(i));
       setSelectedRows(newSelected);
@@ -570,24 +643,12 @@ export default function ImportPage() {
     setSelectedRows(new Set());
   };
   
-  // Derive summary from validationResults - ensures consistency
+  // Derive summary from validationResults
   useEffect(() => {
     if (step === 'validate' && validationResults.length > 0) {
-      const ignoredCount = validationResults.filter(r => r.ignored).length;
-      const valid = validationResults.filter(r => r.isValid && !r.ignored).length;
-
-      setSummary({
-        total: validationResults.length,
-        valid,
-        invalid: validationResults.filter(r => !r.isValid && !r.isDuplicateInFile && !r.isDuplicateInDb && !r.ignored).length,
-        fileDuplicates: validationResults.filter(r => r.isDuplicateInFile && !r.ignored).length,
-        dbDuplicates: validationResults.filter(r => r.isDuplicateInDb && !r.ignored).length,
-        ignored: ignoredCount,
-        readyToImport: valid,
-        imported: summary?.imported || 0,
-      });
+      updateSummary(validationResults, summary?.imported || 0, failedRows);
     }
-  }, [validationResults, step]);
+  }, [validationResults, step, failedRows.length]);
 
   // Load import history on mount
   useEffect(() => {
@@ -605,78 +666,42 @@ export default function ImportPage() {
   // STEP 4: IMPORT
   // ============================================
 
-  const executeImport = useCallback(async () => {
+  const executeImportHandler = useCallback(async () => {
     setIsImporting(true);
-    let imported = 0;
+    setFailedRows([]);
+    setImportProgress({ processed: 0, total: validationResults.filter(r => r.isValid && !r.ignored).length });
+    
     const validRows = validationResults.filter(r => r.isValid && !r.ignored);
-
-    for (const result of validRows) {
-      try {
-        if (entityType === "seller") {
-          await createLead({
-            owner_name: (result.data.owner_name as string) || "Unknown",
-            email: (result.data.email as string) || "",
-            phone: (result.data.phone as string) || "",
-            property_type: (result.data.property_type as string) || "apartment",
-            city: (result.data.city as string) || "",
-            neighborhood: "",
-            price: (result.data.price as number) || 0,
-            notes: (result.data.notes as string) || null,
-            status: (result.data.status as string) || "new",
-            source: "csv_import",
-            listing_url: null,
-            whatsapp_status: "not_sent",
-            seller_type: "owner",
-            language_preference: "en",
-            area_m2: null,
-            bedrooms: null,
-          } as any);
-        } else {
-          const supabase = createClient();
-          await supabase.from("buyers").insert({
-            name: (result.data.name as string) || "Unknown",
-            email: (result.data.email as string) || null,
-            phone: (result.data.phone as string) || null,
-            budget_min: (result.data.budget_min as number) || 0,
-            budget_max: (result.data.budget_max as number) || 0,
-            property_types: result.data.property_types ? [(result.data.property_types as string)] : [],
-            target_areas: result.data.target_areas ? [(result.data.target_areas as string)] : [],
-            timeline: (result.data.timeline as string) || "browsing",
-            seriousness: (result.data.seriousness as string) || "low",
-            pre_approved: (result.data.pre_approved as boolean) || false,
-            notes: (result.data.notes as string) || null,
-            status: (result.data.status as string) || "new",
-          } as any);
-        }
-        imported++;
-      } catch (err) {
-        console.error("Import error for row", result.row, err);
-      }
-    }
-
-    const finalSummary = {
-      ...summary!,
-      imported,
+    
+    const result = await executeImport(validRows, entityType, (progress) => {
+      setImportProgress({ processed: progress.processed, total: progress.total });
+    });
+    
+    setFailedRows(result.failedRows);
+    
+    const finalSummary: ImportSummary = {
+      ...calculateSummary(validationResults, result.imported, result.failedRows),
     };
     setSummary(finalSummary);
     
-    // Save import session
-    const status = imported === validRows.length 
-      ? 'completed' 
-      : imported > 0 
-        ? 'partial' 
-        : 'failed';
+    // Determine status
+    const status = determineImportStatus(validRows.length, result.imported, result.failed);
     
+    // Save import session with detailed counts
     await createImportSession({
       entity_type: entityType,
       file_name: fileName,
+      workspace_id: workspaceId, // Phase 7: Associate with workspace
       total_rows: finalSummary.total,
-      imported_count: imported,
+      imported_count: result.imported,
       invalid_count: finalSummary.invalid,
       file_duplicate_count: finalSummary.fileDuplicates,
       db_duplicate_count: finalSummary.dbDuplicates,
       ignored_count: finalSummary.ignored,
+      failed_count: result.failed,
       status,
+      error_message: result.failed > 0 ? `${result.failed} rows failed during import` : undefined,
+      duration_ms: result.durationMs,
     });
     
     // Refresh import history
@@ -684,98 +709,91 @@ export default function ImportPage() {
     
     setStep("results");
     setIsImporting(false);
-  }, [validationResults, entityType, summary, fileName]);
+    setImportProgress(null);
+  }, [validationResults, entityType, fileName]);
 
   // ============================================
   // DOWNLOAD REPORTS
   // ============================================
 
-  const downloadReport = (type: 'invalid' | 'skipped' | 'imported') => {
-    let rows: ValidationResult[] = [];
-    let filename = '';
-    
-    switch (type) {
-      case 'invalid':
-        rows = validationResults.filter(r => !r.isValid && !r.isDuplicateInFile && !r.isDuplicateInDb);
-        filename = 'invalid-rows-report.csv';
-        break;
-      case 'skipped':
-        rows = validationResults.filter(r => r.isDuplicateInFile || r.isDuplicateInDb || r.ignored);
-        filename = 'skipped-rows-report.csv';
-        break;
-      case 'imported':
-        rows = validationResults.filter(r => r.isValid && !r.ignored);
-        filename = 'imported-rows-report.csv';
-        break;
-    }
+  const downloadReport = (type: 'invalid' | 'skipped' | 'imported' | 'failed') => {
+    const rows = generateReportByType(type, validationResults, failedRows);
     
     if (rows.length === 0) return;
 
-    const csv = Papa.unparse(rows.map(r => ({
-      row: r.row,
-      ...r.data,
-      status: r.isDuplicateInFile ? 'Duplicate in file' : r.isDuplicateInDb ? 'Already in database' : r.ignored ? 'Ignored' : 'Valid',
-      errors: r.errors.join("; ") || 'None',
-    })));
-
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.click();
-    window.URL.revokeObjectURL(url);
+    const filenameMap: Record<string, string> = {
+      invalid: 'invalid-rows-report.csv',
+      skipped: 'skipped-rows-report.csv',
+      imported: 'imported-rows-report.csv',
+      failed: 'failed-rows-report.csv',
+    };
+    
+    const csv = generateReportCSV(rows);
+    downloadCSV(csv, filenameMap[type]);
   };
 
+  function generateReportCSV(rows: ReportRow[]): string {
+    if (rows.length === 0) return "";
+    
+    const allKeys = new Set<string>();
+    rows.forEach((r) => {
+      Object.keys(r.data).forEach((k) => allKeys.add(k));
+    });
+    const keys = Array.from(allKeys);
+    
+    const headers = ["row_number", ...keys, "status", "reason", "errors"];
+    
+    const csvRows = rows.map((r) => {
+      const dataValues = keys.map((k) => {
+        const val = r.data[k];
+        if (val === null || val === undefined) return "";
+        const str = String(val).replace(/"/g, '""');
+        if (str.includes(",") || str.includes("\n") || str.includes('"')) {
+          return `"${str}"`;
+        }
+        return str;
+      });
+      
+      const errorStr = r.errors ? r.errors.join("; ") : "";
+      
+      return [
+        r.row,
+        ...dataValues,
+        r.status,
+        r.reason || "",
+        errorStr,
+      ].join(",");
+    });
+    
+    return [headers.join(","), ...csvRows].join("\n");
+  }
+
   const downloadErrorReport = useCallback(() => {
-    const problematicRows = validationResults.filter(r => !r.isValid || r.isDuplicateInFile || r.isDuplicateInDb);
-    if (problematicRows.length === 0) return;
+    const rows = generateReportByType("all", validationResults, failedRows);
+    if (rows.length === 0) return;
 
-    const csv = Papa.unparse(problematicRows.map(r => ({
-      row: r.row,
-      ...r.data,
-      errors: r.errors.join("; ") + (r.isDuplicateInFile ? " [Duplicate in file]" : "") + (r.isDuplicateInDb ? " [Already in database]" : ""),
-    })));
-
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "import-report.csv";
-    a.click();
-    window.URL.revokeObjectURL(url);
-  }, [validationResults]);
+    const csv = generateReportCSV(rows);
+    downloadCSV(csv, "import-error-report.csv");
+  }, [validationResults, failedRows]);
 
   // ============================================
   // CSV TEMPLATES
   // ============================================
 
   const downloadTemplate = (type: 'seller' | 'buyer') => {
-    let csv = '';
-    let filename = '';
-    
-    if (type === 'seller') {
-      csv = 'owner_name,email,phone,property_type,city,price,notes\n"John Smith","john@example.com","+1234567890","apartment","Miami","500000","Looking to sell quickly"\n"Jane Doe","jane@example.com","+0987654321","house","Boston","750000","Price negotiable"';
-      filename = 'seller-import-template.csv';
-    } else {
-      csv = 'name,email,phone,budget_min,budget_max,property_types,target_areas,timeline,seriousness,pre_approved,notes\n"Mike Buyer","mike@example.com","+1234567890","300000","500000","apartment","Miami","3_months","high",false,"First-time buyer"\n"Sarah Investor","sarah@example.com","+0987654321","500000","1000000","house,commercial","Boston,New York","immediate","very_high",true,"Cash buyer"';
-      filename = 'buyer-import-template.csv';
-    }
-    
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.click();
-    window.URL.revokeObjectURL(url);
+    const csv = type === 'seller' ? generateSellerTemplate() : generateBuyerTemplate();
+    const filename = type === 'seller' ? 'seller-import-template.csv' : 'buyer-import-template.csv';
+    downloadCSV(csv, filename);
   };
 
   // ============================================
   // STATUS BADGE HELPER
   // ============================================
 
-  const getStatusBadge = (result: ValidationResult) => {
+  const getStatusBadge = (result: ValidationResult, wasFailed?: boolean) => {
+    if (wasFailed) {
+      return <Badge className="text-xs bg-red-500/20 text-red-400 border-red-500/30">Failed</Badge>;
+    }
     if (result.ignored) return <Badge variant="secondary" className="text-xs">Ignored</Badge>;
     if (result.isDuplicateInDb) {
       const fieldLabel = result.duplicateField === 'email' ? ' (email)' : result.duplicateField === 'phone' ? ' (phone)' : result.duplicateField === 'both' ? ' (email+phone)' : '';
@@ -787,6 +805,38 @@ export default function ImportPage() {
     }
     if (!result.isValid) return <Badge className="text-xs bg-amber-500/20 text-amber-400 border-amber-500/30">Invalid</Badge>;
     return <Badge className="text-xs bg-green-500/20 text-green-400 border-green-500/30">Ready</Badge>;
+  };
+
+  // ============================================
+  // EDGE CASE UI HELPERS
+  // ============================================
+
+  const renderEdgeCaseAlert = () => {
+    if (!edgeCase || !edgeCase.isEdgeCase) return null;
+
+    const icons: Record<string, React.ReactNode> = {
+      empty: <FileX className="w-5 h-5 text-amber-400" />,
+      headers_only: <FileX className="w-5 h-5 text-amber-400" />,
+      too_many_empty: <AlertTriangle className="w-5 h-5 text-amber-400" />,
+      unsupported_columns: <AlertCircle className="w-5 h-5 text-amber-400" />,
+      all_invalid: <AlertCircle className="w-5 h-5 text-amber-400" />,
+      all_duplicates: <Info className="w-5 h-5 text-blue-400" />,
+      all_ignored: <Info className="w-5 h-5 text-blue-400" />,
+    };
+
+    return (
+      <div className={`flex items-start gap-3 p-4 rounded-lg border mb-6 ${edgeCase.canProceed ? 'bg-amber-500/10 border-amber-500/20' : 'bg-red-500/10 border-red-500/20'}`}>
+        {icons[edgeCase.type || ''] || <AlertCircle className="w-5 h-5 text-amber-400" />}
+        <div className="flex-1">
+          <p className={`text-sm font-medium ${edgeCase.canProceed ? 'text-amber-200' : 'text-red-200'}`}>
+            {edgeCase.canProceed ? 'Warning' : 'Cannot Import'}
+          </p>
+          <p className={`text-sm mt-1 ${edgeCase.canProceed ? 'text-amber-200/70' : 'text-red-200/70'}`}>
+            {edgeCase.message}
+          </p>
+        </div>
+      </div>
+    );
   };
 
   // ============================================
@@ -802,7 +852,7 @@ export default function ImportPage() {
             <h1 className="text-3xl font-semibold tracking-tight">{t.import.title}</h1>
             <p className="text-white/50 mt-2">{t.import.subtitle}</p>
           </div>
-          <Badge variant="secondary" className="text-xs">{t.import.phaseLabel}</Badge>
+          <Badge variant="secondary" className="text-xs">Phase 6</Badge>
         </div>
       </section>
 
@@ -897,25 +947,26 @@ export default function ImportPage() {
             <Card className="p-6">
               <h4 className="font-medium mb-4 flex items-center gap-2"><Database className="w-4 h-4 text-white/50" />Recent Imports</h4>
               <div className="space-y-3">
-                {importHistory.map((session) => (
-                  <div key={session.id} className="flex items-center justify-between p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">
-                    <div className="flex items-center gap-3">
-                      <Badge variant={session.status === 'completed' ? 'default' : session.status === 'partial' ? 'secondary' : 'destructive'} className="text-xs">
-                        {session.status}
-                      </Badge>
-                      <div>
-                        <p className="text-sm font-medium">{session.file_name}</p>
-                        <p className="text-xs text-white/50">
-                          {new Date(session.created_at).toLocaleString()} • {session.entity_type === 'seller' ? 'Sellers' : 'Buyers'}
-                        </p>
+                {importHistory.map((session) => {
+                  const formatted = formatImportSession(session);
+                  return (
+                    <div key={session.id} className="flex items-center justify-between p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+                      <div className="flex items-center gap-3">
+                        <Badge variant={getImportStatusVariant(session.status)} className="text-xs">
+                          {formatted.statusText}
+                        </Badge>
+                        <div>
+                          <p className="text-sm font-medium">{formatted.title}</p>
+                          <p className="text-xs text-white/50">{formatted.subtitle}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm">{session.imported_count} / {session.total_rows}</p>
+                        <p className="text-xs text-white/50">{formatted.countsText}</p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-sm">{session.imported_count} / {session.total_rows}</p>
-                      <p className="text-xs text-white/50">imported</p>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </Card>
           )}
@@ -930,8 +981,10 @@ export default function ImportPage() {
               <h3 className="text-lg font-medium">{t.import.preview.title}</h3>
               <p className="text-sm text-white/50">{fileName} • {rawData.length} {t.import.preview.rows}</p>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => setStep("upload")}><X className="w-4 h-4 mr-2" />{t.common.cancel}</Button>
+            <Button variant="ghost" size="sm" onClick={() => { resetImport(); setStep("upload"); }}><X className="w-4 h-4 mr-2" />{t.common.cancel}</Button>
           </div>
+
+          {renderEdgeCaseAlert()}
 
           <div className="mb-6">
             <h4 className="text-sm font-medium mb-3">{t.import.preview.mapping}</h4>
@@ -975,8 +1028,8 @@ export default function ImportPage() {
           )}
 
           <div className="flex items-center justify-between">
-            <Button variant="outline" onClick={() => setStep("upload")}><ChevronLeft className="w-4 h-4 mr-2" />{t.common.back}</Button>
-            <Button onClick={runValidation} disabled={!hasRequiredMapping || isValidating}>
+            <Button variant="outline" onClick={() => { resetImport(); setStep("upload"); }}><ChevronLeft className="w-4 h-4 mr-2" />{t.common.back}</Button>
+            <Button onClick={runValidation} disabled={!hasRequiredMapping || isValidating || (edgeCase?.isEdgeCase && !edgeCase?.canProceed)}>
               {isValidating ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Checking database...</> : <>{t.import.preview.validate}<ChevronRight className="w-4 h-4 ml-2" /></>}
             </Button>
           </div>
@@ -998,19 +1051,24 @@ export default function ImportPage() {
             </div>
           </div>
 
+          {renderEdgeCaseAlert()}
+
           {/* SUMMARY CARDS */}
-          <div className="grid grid-cols-6 gap-3 mb-6">
+          <div className="grid grid-cols-7 gap-3 mb-6">
             <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] text-center cursor-pointer hover:bg-white/[0.04] transition-colors" onClick={() => setFilter('all')}><p className="text-xl font-semibold">{summary.total}</p><p className="text-xs text-white/50">Total</p></div>
             <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-center cursor-pointer hover:bg-green-500/15 transition-colors" onClick={() => setFilter('ready')}><p className="text-xl font-semibold text-green-400">{summary.readyToImport}</p><p className="text-xs text-green-400/70">Ready</p></div>
             <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-center cursor-pointer hover:bg-amber-500/15 transition-colors" onClick={() => setFilter('invalid')}><p className="text-xl font-semibold text-amber-400">{summary.invalid}</p><p className="text-xs text-amber-400/70">Invalid</p></div>
             <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-center cursor-pointer hover:bg-blue-500/15 transition-colors" onClick={() => setFilter('inFile')}><p className="text-xl font-semibold text-blue-400">{summary.fileDuplicates}</p><p className="text-xs text-blue-400/70">In File</p></div>
             <div className="p-3 rounded-lg bg-purple-500/10 border border-purple-500/20 text-center cursor-pointer hover:bg-purple-500/15 transition-colors" onClick={() => setFilter('inDb')}><p className="text-xl font-semibold text-purple-400">{summary.dbDuplicates}</p><p className="text-xs text-purple-400/70">In DB</p></div>
             <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] text-center cursor-pointer hover:bg-white/[0.04] transition-colors" onClick={() => setFilter('ignored')}><p className="text-xl font-semibold text-white/60">{summary.ignored}</p><p className="text-xs text-white/50">Ignored</p></div>
+            {summary.failed > 0 && (
+              <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-center cursor-pointer hover:bg-red-500/15 transition-colors" onClick={() => setFilter('failed')}><p className="text-xl font-semibold text-red-400">{summary.failed}</p><p className="text-xs text-red-400/70">Failed</p></div>
+            )}
           </div>
 
           {/* FILTER TABS */}
           <div className="flex items-center justify-between mb-4">
-            <div className="flex gap-1">
+            <div className="flex gap-1 flex-wrap">
               {(['all', 'ready', 'invalid', 'inFile', 'inDb', 'ignored'] as FilterType[]).map((f) => (
                 <button
                   key={f}
@@ -1033,7 +1091,7 @@ export default function ImportPage() {
           </div>
 
           {/* BATCH ACTIONS */}
-          <div className="flex items-center gap-2 mb-4 p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+          <div className="flex items-center gap-2 mb-4 p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] flex-wrap">
             <span className="text-xs text-white/50 mr-2">Batch:</span>
             <Button variant="ghost" size="sm" onClick={ignoreAllInvalid} disabled={summary.invalid === 0} className="text-xs">
               <EyeOff className="w-3 h-3 mr-1" />Ignore All Invalid
@@ -1057,124 +1115,148 @@ export default function ImportPage() {
           {/* REVIEW TABLE */}
           <div className="mb-6">
             <h4 className="text-sm font-medium mb-3 flex items-center gap-2"><Edit2 className="w-4 h-4" />Review & Edit {filter !== 'all' && <span className="text-white/50">• {filteredResults.length} shown</span>}</h4>
-            <div className="max-h-96 overflow-y-auto rounded-lg border border-white/[0.06]">
-              <table className="w-full text-sm">
-                <thead className="bg-white/[0.02] sticky top-0">
-                  <tr>
-                    <th className="px-2 py-2 text-left text-white/50 font-normal w-10">
-                      <input
-                        type="checkbox"
-                        checked={filteredResults.length > 0 && filteredResults.every(r => selectedRows.has(validationResults.indexOf(r)))}
-                        onChange={toggleSelectAll}
-                        className="rounded border-white/20 bg-transparent"
-                      />
-                    </th>
-                    <th className="px-2 py-2 text-left text-white/50 font-normal w-14">Row</th>
-                    <th className="px-2 py-2 text-left text-white/50 font-normal">Name</th>
-                    <th className="px-2 py-2 text-left text-white/50 font-normal">Email</th>
-                    <th className="px-2 py-2 text-left text-white/50 font-normal">Phone</th>
-                    <th className="px-2 py-2 text-left text-white/50 font-normal">Status</th>
-                    <th className="px-2 py-2 text-left text-white/50 font-normal">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredResults.map((result) => {
-                    const originalIndex = validationResults.indexOf(result);
-                    return (
-                      <tr key={originalIndex} className={`border-t border-white/[0.06] ${result.ignored ? 'opacity-50' : ''}`}>
-                        <td className="px-2 py-2">
-                          <input
-                            type="checkbox"
-                            checked={selectedRows.has(originalIndex)}
-                            onChange={() => toggleSelectRow(originalIndex)}
-                            className="rounded border-white/20 bg-transparent"
-                          />
-                        </td>
-                        <td className="px-2 py-2 text-white/50">{result.row}</td>
-                        <td className="px-2 py-2" onClick={() => editingCell?.rowIndex !== originalIndex && setEditingCell({rowIndex: originalIndex, field: nameField})}>
-                          {editingCell?.rowIndex === originalIndex && editingCell.field === nameField ? (
+            
+            {filteredResults.length === 0 ? (
+              <div className="text-center py-12 bg-white/[0.02] rounded-lg border border-white/[0.06]">
+                <Info className="w-8 h-8 text-white/30 mx-auto mb-3" />
+                <p className="text-sm text-white/50">No rows match this filter</p>
+                <p className="text-xs text-white/30 mt-1">Try selecting a different filter</p>
+              </div>
+            ) : (
+              <div className="max-h-96 overflow-y-auto rounded-lg border border-white/[0.06]">
+                <table className="w-full text-sm">
+                  <thead className="bg-white/[0.02] sticky top-0">
+                    <tr>
+                      <th className="px-2 py-2 text-left text-white/50 font-normal w-10">
+                        <input
+                          type="checkbox"
+                          checked={filteredResults.length > 0 && filteredResults.every(r => selectedRows.has(validationResults.indexOf(r)))}
+                          onChange={toggleSelectAll}
+                          className="rounded border-white/20 bg-transparent"
+                        />
+                      </th>
+                      <th className="px-2 py-2 text-left text-white/50 font-normal w-14">Row</th>
+                      <th className="px-2 py-2 text-left text-white/50 font-normal">Name</th>
+                      <th className="px-2 py-2 text-left text-white/50 font-normal">Email</th>
+                      <th className="px-2 py-2 text-left text-white/50 font-normal">Phone</th>
+                      <th className="px-2 py-2 text-left text-white/50 font-normal">Status</th>
+                      <th className="px-2 py-2 text-left text-white/50 font-normal">Why Not Importable</th>
+                      <th className="px-2 py-2 text-left text-white/50 font-normal">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredResults.map((result) => {
+                      const originalIndex = validationResults.indexOf(result);
+                      const errorMessage = getRowImportError(result.isValid, result.isDuplicateInFile, result.isDuplicateInDb, result.ignored, result.errors);
+                      return (
+                        <tr key={originalIndex} className={`border-t border-white/[0.06] ${result.ignored ? 'opacity-50' : ''}`}>
+                          <td className="px-2 py-2">
                             <input
-                              type="text"
-                              defaultValue={(result.data[nameField] as string) || ''}
-                              onBlur={(e) => { handleCellEdit(originalIndex, nameField, e.target.value); setEditingCell(null); }}
-                              onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-                              className="w-full bg-black border border-white/20 rounded px-2 py-1 text-sm"
-                              autoFocus
+                              type="checkbox"
+                              checked={selectedRows.has(originalIndex)}
+                              onChange={() => toggleSelectRow(originalIndex)}
+                              className="rounded border-white/20 bg-transparent"
                             />
-                          ) : (
-                            <span 
-                              className="cursor-pointer hover:text-white text-white/70 border-b border-dashed border-white/20"
-                            >
-                              {(result.data[nameField] as string) || <span className="text-amber-400 italic">empty</span>}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-2 py-2" onClick={() => editingCell?.rowIndex !== originalIndex && setEditingCell({rowIndex: originalIndex, field: 'email'})}>
-                          {editingCell?.rowIndex === originalIndex && editingCell.field === 'email' ? (
-                            <input
-                              type="text"
-                              defaultValue={(result.data.email as string) || ''}
-                              onBlur={(e) => { handleCellEdit(originalIndex, 'email', e.target.value); setEditingCell(null); }}
-                              onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-                              className="w-full bg-black border border-white/20 rounded px-2 py-1 text-sm"
-                              autoFocus
-                            />
-                          ) : (
-                            <span 
-                              className={`cursor-pointer hover:text-white border-b border-dashed border-white/20 ${result.errors.some(e => e.includes('email')) ? 'text-amber-400' : 'text-white/70'}`}
-                            >
-                              {(result.data.email as string) || <span className="text-white/30">—</span>}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-2 py-2" onClick={() => editingCell?.rowIndex !== originalIndex && setEditingCell({rowIndex: originalIndex, field: 'phone'})}>
-                          {editingCell?.rowIndex === originalIndex && editingCell.field === 'phone' ? (
-                            <input
-                              type="text"
-                              defaultValue={(result.data.phone as string) || ''}
-                              onBlur={(e) => { handleCellEdit(originalIndex, 'phone', e.target.value); setEditingCell(null); }}
-                              onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-                              className="w-full bg-black border border-white/20 rounded px-2 py-1 text-sm"
-                              autoFocus
-                            />
-                          ) : (
-                            <span 
-                              className={`cursor-pointer hover:text-white border-b border-dashed border-white/20 ${result.errors.some(e => e.includes('phone')) ? 'text-amber-400' : 'text-white/70'}`}
-                            >
-                              {(result.data.phone as string) || <span className="text-white/30">—</span>}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-2 py-2">{getStatusBadge(result)}</td>
-                        <td className="px-2 py-2">
-                          <div className="flex gap-1">
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
-                              onClick={() => toggleIgnoreRow(originalIndex)}
-                              className={result.ignored ? 'text-amber-400' : ''}
-                            >
-                              {result.ignored ? <><Eye className="w-3 h-3 mr-1" />Keep</> : <><EyeOff className="w-3 h-3 mr-1" />Ignore</>}
-                            </Button>
-                            {!result.isValid && !result.ignored && (
-                              <Button variant="ghost" size="sm" onClick={() => revalidateRow(originalIndex)}>
-                                <RefreshCw className="w-3 h-3 mr-1" />Check
-                              </Button>
+                          </td>
+                          <td className="px-2 py-2 text-white/50">{result.row}</td>
+                          <td className="px-2 py-2" onClick={() => editingCell?.rowIndex !== originalIndex && setEditingCell({rowIndex: originalIndex, field: nameField})}>
+                            {editingCell?.rowIndex === originalIndex && editingCell.field === nameField ? (
+                              <input
+                                type="text"
+                                defaultValue={(result.data[nameField] as string) || ''}
+                                onBlur={(e) => { handleCellEdit(originalIndex, nameField, e.target.value); setEditingCell(null); }}
+                                onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                                className="w-full bg-black border border-white/20 rounded px-2 py-1 text-sm"
+                                autoFocus
+                              />
+                            ) : (
+                              <span 
+                                className="cursor-pointer hover:text-white text-white/70 border-b border-dashed border-white/20"
+                              >
+                                {(result.data[nameField] as string) || <span className="text-amber-400 italic">empty</span>}
+                              </span>
                             )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                          </td>
+                          <td className="px-2 py-2" onClick={() => editingCell?.rowIndex !== originalIndex && setEditingCell({rowIndex: originalIndex, field: 'email'})}>
+                            {editingCell?.rowIndex === originalIndex && editingCell.field === 'email' ? (
+                              <input
+                                type="text"
+                                defaultValue={(result.data.email as string) || ''}
+                                onBlur={(e) => { handleCellEdit(originalIndex, 'email', e.target.value); setEditingCell(null); }}
+                                onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                                className="w-full bg-black border border-white/20 rounded px-2 py-1 text-sm"
+                                autoFocus
+                              />
+                            ) : (
+                              <span 
+                                className={`cursor-pointer hover:text-white border-b border-dashed border-white/20 ${result.errors.some(e => e.includes('email')) ? 'text-amber-400' : 'text-white/70'}`}
+                              >
+                                {(result.data.email as string) || <span className="text-white/30">—</span>}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-2 py-2" onClick={() => editingCell?.rowIndex !== originalIndex && setEditingCell({rowIndex: originalIndex, field: 'phone'})}>
+                            {editingCell?.rowIndex === originalIndex && editingCell.field === 'phone' ? (
+                              <input
+                                type="text"
+                                defaultValue={(result.data.phone as string) || ''}
+                                onBlur={(e) => { handleCellEdit(originalIndex, 'phone', e.target.value); setEditingCell(null); }}
+                                onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                                className="w-full bg-black border border-white/20 rounded px-2 py-1 text-sm"
+                                autoFocus
+                              />
+                            ) : (
+                              <span 
+                                className={`cursor-pointer hover:text-white border-b border-dashed border-white/20 ${result.errors.some(e => e.includes('phone')) ? 'text-amber-400' : 'text-white/70'}`}
+                              >
+                                {(result.data.phone as string) || <span className="text-white/30">—</span>}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-2 py-2">{getStatusBadge(result)}</td>
+                          <td className="px-2 py-2 text-xs text-white/50 max-w-[200px] truncate" title={errorMessage}>
+                            {errorMessage || <span className="text-green-400/70">Ready to import</span>}
+                          </td>
+                          <td className="px-2 py-2">
+                            <div className="flex gap-1">
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={() => toggleIgnoreRow(originalIndex)}
+                                className={result.ignored ? 'text-amber-400' : ''}
+                              >
+                                {result.ignored ? <><Eye className="w-3 h-3 mr-1" />Keep</> : <><EyeOff className="w-3 h-3 mr-1" />Ignore</>}
+                              </Button>
+                              {!result.isValid && !result.ignored && (
+                                <Button variant="ghost" size="sm" onClick={() => revalidateRow(originalIndex)}>
+                                  <RefreshCw className="w-3 h-3 mr-1" />Check
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center justify-between">
             <Button variant="outline" onClick={() => setStep("preview")}><ChevronLeft className="w-4 h-4 mr-2" />{t.common.back}</Button>
-            <Button onClick={executeImport} disabled={summary.readyToImport === 0 || isImporting}>
-              {isImporting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />{t.import.validate.importing}</> : <><FileCheck className="w-4 h-4 mr-2" />{t.import.validate.import.replace("{{count}}", String(summary.readyToImport))}</>}
+            <Button 
+              onClick={executeImportHandler} 
+              disabled={summary.readyToImport === 0 || isImporting || (edgeCase?.isEdgeCase && !edgeCase?.canProceed)}
+            >
+              {isImporting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  {importProgress ? `${importProgress.processed}/${importProgress.total}` : t.import.validate.importing}
+                </>
+              ) : (
+                <><FileCheck className="w-4 h-4 mr-2" />{t.import.validate.import.replace("{{count}}", String(summary.readyToImport))}</>
+              )}
             </Button>
           </div>
         </Card>
@@ -1184,16 +1266,31 @@ export default function ImportPage() {
       {step === "results" && summary && (
         <Card className="p-12">
           <div className="text-center mb-8">
-            <div className="w-20 h-20 rounded-full bg-green-500/10 flex items-center justify-center mx-auto mb-6">
-              <CheckCircle className="w-10 h-10 text-green-400" />
+            <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ${summary.failed > 0 ? 'bg-amber-500/10' : 'bg-green-500/10'}`}>
+              {summary.failed > 0 ? <AlertCircle className="w-10 h-10 text-amber-400" /> : <CheckCircle className="w-10 h-10 text-green-400" />}
             </div>
-            <h3 className="text-2xl font-semibold mb-2">{t.import.results.success}</h3>
-            <p className="text-white/50">{t.import.results.imported.replace("{{count}}", String(summary.imported))}</p>
+            <h3 className="text-2xl font-semibold mb-2">
+              {summary.failed > 0 ? 'Import Completed with Issues' : t.import.results.success}
+            </h3>
+            <p className="text-white/50">
+              {formatImportSummary({
+                total: summary.total,
+                imported: summary.imported,
+                invalid: summary.invalid,
+                fileDuplicates: summary.fileDuplicates,
+                dbDuplicates: summary.dbDuplicates,
+                ignored: summary.ignored,
+                failed: summary.failed,
+              })}
+            </p>
           </div>
 
           {/* Summary Cards */}
-          <div className="grid grid-cols-4 gap-4 max-w-2xl mx-auto mb-8">
+          <div className={`grid gap-4 max-w-2xl mx-auto mb-8 ${summary.failed > 0 ? 'grid-cols-5' : 'grid-cols-4'}`}>
             <div className="p-4 rounded-lg bg-green-500/5 border border-green-500/10"><p className="text-2xl font-semibold text-green-400">{summary.imported}</p><p className="text-xs text-white/50">Imported</p></div>
+            {summary.failed > 0 && (
+              <div className="p-4 rounded-lg bg-red-500/5 border border-red-500/10"><p className="text-2xl font-semibold text-red-400">{summary.failed}</p><p className="text-xs text-white/50">Failed</p></div>
+            )}
             <div className="p-4 rounded-lg bg-amber-500/5 border border-amber-500/10"><p className="text-2xl font-semibold text-amber-400">{summary.invalid}</p><p className="text-xs text-white/50">Invalid</p></div>
             <div className="p-4 rounded-lg bg-blue-500/5 border border-blue-500/10"><p className="text-2xl font-semibold text-blue-400">{summary.fileDuplicates}</p><p className="text-xs text-white/50">In File</p></div>
             <div className="p-4 rounded-lg bg-purple-500/5 border border-purple-500/10"><p className="text-2xl font-semibold text-purple-400">{summary.dbDuplicates}</p><p className="text-xs text-white/50">In DB</p></div>
@@ -1206,6 +1303,11 @@ export default function ImportPage() {
               <Button variant="outline" size="sm" onClick={() => downloadReport('imported')} disabled={summary.imported === 0}>
                 <Download className="w-4 h-4 mr-2" />Imported ({summary.imported})
               </Button>
+              {summary.failed > 0 && (
+                <Button variant="outline" size="sm" onClick={() => downloadReport('failed')} disabled={summary.failed === 0}>
+                  <Download className="w-4 h-4 mr-2" />Failed ({summary.failed})
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={() => downloadReport('invalid')} disabled={summary.invalid === 0}>
                 <Download className="w-4 h-4 mr-2" />Invalid ({summary.invalid})
               </Button>

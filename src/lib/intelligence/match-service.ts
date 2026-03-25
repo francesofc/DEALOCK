@@ -522,3 +522,11 @@ export async function runMatchGeneration(config?: Partial<MatchServiceConfig>): 
   const service = createMatchService(config);
   return service.generateMatches();
 }
+
+/**
+ * Generate matches for a specific buyer (for auto-matching on buyer creation)
+ */
+export async function generateMatchesForBuyer(buyerId: string, config?: Partial<MatchServiceConfig>): Promise<MatchGenerationResult> {
+  const service = createMatchService(config);
+  return service.generateMatchesForBuyer(buyerId);
+}

@@ -1,5 +1,6 @@
 import { Buyer, BuyerStatus } from '@/types/database'
 import { createClient } from '@/lib/supabase/client'
+import { generateMatchesForBuyer } from '@/lib/intelligence/match-service'
 
 // Check if Supabase is configured
 const isSupabaseConfigured = () => {
@@ -117,6 +118,19 @@ export async function createBuyer(buyer: Buyer, workspaceId?: string | null): Pr
   if (error) {
     console.error('Error creating buyer:', error)
     throw error
+  }
+
+  // Auto-generate matches for this buyer in background
+  try {
+    console.log('[AutoMatch] Generating matches for new buyer:', buyer.id)
+    generateMatchesForBuyer(buyer.id).then(result => {
+      console.log('[AutoMatch] Generated matches:', result)
+    }).catch(err => {
+      console.error('[AutoMatch] Failed to generate matches:', err)
+    })
+  } catch (err) {
+    // Non-blocking: match generation failure shouldn't break buyer creation
+    console.error('[AutoMatch] Error triggering match generation:', err)
   }
 }
 

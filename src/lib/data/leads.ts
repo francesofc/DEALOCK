@@ -1,5 +1,6 @@
 import { Lead, LeadStatus } from '@/types/database'
 import { createClient } from '@/lib/supabase/client'
+import { runMatchGeneration } from '@/lib/intelligence/match-service'
 
 // Demo/seed data for initial load
 const mockLeads: Lead[] = [
@@ -346,6 +347,19 @@ export async function createLead(lead: Lead, workspaceId?: string | null): Promi
   if (error) {
     console.error('Error creating lead:', error)
     throw error
+  }
+
+  // Auto-generate matches for all buyers against this new seller in background
+  try {
+    console.log('[AutoMatch] Generating matches for new seller:', lead.id)
+    runMatchGeneration().then(result => {
+      console.log('[AutoMatch] Generated matches for new seller:', result)
+    }).catch(err => {
+      console.error('[AutoMatch] Failed to generate matches for seller:', err)
+    })
+  } catch (err) {
+    // Non-blocking: match generation failure shouldn't break lead creation
+    console.error('[AutoMatch] Error triggering match generation:', err)
   }
 }
 

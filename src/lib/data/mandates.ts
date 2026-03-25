@@ -1,5 +1,6 @@
 import { Mandate, MandateStatus } from '@/types/database'
 import { createClient } from '@/lib/supabase/client'
+import { runMatchGeneration } from '@/lib/intelligence/match-service'
 
 // Check if Supabase is configured
 const isSupabaseConfigured = () => {
@@ -220,6 +221,19 @@ export async function createMandate(mandate: Mandate, workspaceId?: string | nul
 
   // CENTRALIZED: Always sync lead status after mandate creation
   await syncLeadStatusWithMandate(mandate.lead_id, mandate.status, currentWorkspaceId);
+
+  // Auto-generate matches for all buyers against this new mandate in background
+  try {
+    console.log('[AutoMatch] Generating matches for new mandate:', mandate.id)
+    runMatchGeneration().then(result => {
+      console.log('[AutoMatch] Generated matches for new mandate:', result)
+    }).catch(err => {
+      console.error('[AutoMatch] Failed to generate matches for mandate:', err)
+    })
+  } catch (err) {
+    // Non-blocking: match generation failure shouldn't break mandate creation
+    console.error('[AutoMatch] Error triggering match generation:', err)
+  }
 }
 
 export async function updateMandate(mandate: Mandate, workspaceId?: string | null): Promise<void> {
