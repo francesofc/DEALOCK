@@ -72,20 +72,30 @@ export class MatchService {
   private engine: MatchEngine;
   private config: MatchServiceConfig;
   private supabase = createClient();
+  private workspaceId: string | null;
 
   constructor(
     config: Partial<MatchServiceConfig> = {},
-    engine?: MatchEngine
+    engine?: MatchEngine,
+    workspaceId?: string | null
   ) {
     this.config = { ...DEFAULT_SERVICE_CONFIG, ...config };
     this.engine = engine || new MatchEngine();
+    this.workspaceId = workspaceId || null;
   }
 
   /**
    * Main entry point: Generate matches for all buyers against all properties
    * This is the manual trigger function
+   * Requires workspaceId to be set for data isolation
    */
-  async generateMatches(): Promise<MatchGenerationResult> {
+  async generateMatches(workspaceId?: string): Promise<MatchGenerationResult> {
+    const effectiveWorkspaceId = workspaceId || this.workspaceId;
+    
+    if (!effectiveWorkspaceId) {
+      console.error('[MatchService] Cannot generate matches: workspace_id is required');
+      throw new Error('Workspace ID is required for match generation');
+    }
     const result: MatchGenerationResult = {
       analyzed: 0,
       created: 0,
@@ -96,9 +106,9 @@ export class MatchService {
     };
 
     try {
-      // 1. Load all reference data
-      console.log('[MatchService] Loading reference data...');
-      const { buyers, mandates, sellers, financeMap } = await this.loadReferenceData();
+      // 1. Load all reference data (filtered by workspace)
+      console.log('[MatchService] Loading reference data for workspace:', effectiveWorkspaceId);
+      const { buyers, mandates, sellers, financeMap } = await this.loadReferenceData(effectiveWorkspaceId);
 
       console.log(`[MatchService] Loaded: ${buyers.length} buyers, ${mandates.length} mandates, ${sellers.length} sellers`);
 
@@ -202,7 +212,7 @@ export class MatchService {
 
       // 5. Batch insert matches
       if (matchesToCreate.length > 0) {
-        const created = await this.insertMatches(matchesToCreate.map(m => m.opportunity));
+        const created = await this.insertMatches(matchesToCreate.map(m => m.opportunity), effectiveWorkspaceId);
         result.created = created;
       }
 
@@ -217,6 +227,7 @@ export class MatchService {
 
   /**
    * Generate matches for a specific buyer only
+   * Automatically filters by the buyer's workspace
    */
   async generateMatchesForBuyer(buyerId: string): Promise<MatchGenerationResult> {
     const result: MatchGenerationResult = {
@@ -229,10 +240,10 @@ export class MatchService {
     };
 
     try {
-      // Load specific buyer
+      // Load specific buyer with workspace
       const { data: buyerData, error: buyerError } = await this.supabase
         .from('buyers')
-        .select('*')
+        .select('*, workspace_id')
         .eq('id', buyerId)
         .single();
 
@@ -241,6 +252,14 @@ export class MatchService {
       }
 
       const buyer = buyerData as Buyer;
+      
+      // Require workspace_id for data isolation
+      if (!buyer.workspace_id) {
+        console.error(`[MatchService] Buyer ${buyerId} has no workspace_id`);
+        throw new Error('Buyer must have a workspace_id for match generation');
+      }
+      
+      console.log(`[MatchService] Generating matches for buyer ${buyerId} in workspace ${buyer.workspace_id}`);
       
       // Load finance profile
       const { data: financeData } = await this.supabase
@@ -253,16 +272,20 @@ export class MatchService {
       const financeReadiness = this.mapFinanceStatus(finance?.status);
       const buyerCriteria = buyerToMatchCriteria(buyer, financeReadiness);
 
-      // Load properties
+      // Load properties filtered by buyer's workspace
       const { data: mandatesData } = await this.supabase
         .from('mandates')
-        .select('*');
+        .select('*')
+        .eq('workspace_id', buyer.workspace_id);
       const mandates = (mandatesData || []) as Mandate[];
 
       const { data: sellersData } = await this.supabase
         .from('leads')
-        .select('*');
+        .select('*')
+        .eq('workspace_id', buyer.workspace_id);
       const sellers = (sellersData || []) as Lead[];
+
+      console.log(`[MatchService] Loaded ${mandates.length} mandates and ${sellers.length} sellers from workspace ${buyer.workspace_id}`);
 
       // Build properties
       const properties: PropertyMatchCriteria[] = [];
@@ -279,7 +302,7 @@ export class MatchService {
         }
       }
 
-      // Load existing matches for this buyer
+      // Load existing matches for this buyer (workspace isolation via buyer_id)
       const existingMatches = await this.loadExistingMatchKeysForBuyer(buyerId);
 
       // Generate matches
@@ -323,7 +346,7 @@ export class MatchService {
       }
 
       if (matchesToCreate.length > 0) {
-        const created = await this.insertMatches(matchesToCreate);
+        const created = await this.insertMatches(matchesToCreate, buyer.workspace_id);
         result.created = created;
       }
 
@@ -339,16 +362,16 @@ export class MatchService {
   // PRIVATE HELPERS
   // ============================================
 
-  private async loadReferenceData(): Promise<{
+  private async loadReferenceData(workspaceId: string): Promise<{
     buyers: Buyer[];
     mandates: Mandate[];
     sellers: Lead[];
     financeMap: Map<string, FinanceProfile>;
   }> {
     const [buyersResult, mandatesResult, sellersResult, financeResult] = await Promise.all([
-      this.supabase.from('buyers').select('*'),
-      this.supabase.from('mandates').select('*'),
-      this.supabase.from('leads').select('*'),
+      this.supabase.from('buyers').select('*').eq('workspace_id', workspaceId),
+      this.supabase.from('mandates').select('*').eq('workspace_id', workspaceId),
+      this.supabase.from('leads').select('*').eq('workspace_id', workspaceId),
       this.supabase.from('finance_profiles').select('*'),
     ]);
 
@@ -463,7 +486,8 @@ export class MatchService {
   }
 
   private async insertMatches(
-    matches: Array<Omit<MatchOpportunity, 'id' | 'created_at' | 'updated_at'>>
+    matches: Array<Omit<MatchOpportunity, 'id' | 'created_at' | 'updated_at'>>,
+    workspaceId: string
   ): Promise<number> {
     if (matches.length === 0) return 0;
 
@@ -479,6 +503,7 @@ export class MatchService {
       priority: m.priority,
       recommended_action: m.recommended_action,
       notes: m.notes,
+      workspace_id: workspaceId,
     }));
 
     // Insert in batches
@@ -511,16 +536,17 @@ export class MatchService {
 /**
  * Create a new MatchService instance with default config
  */
-export function createMatchService(config?: Partial<MatchServiceConfig>): MatchService {
-  return new MatchService(config);
+export function createMatchService(config?: Partial<MatchServiceConfig>, workspaceId?: string | null): MatchService {
+  return new MatchService(config, undefined, workspaceId);
 }
 
 /**
  * Quick function to run match generation (for hooks/components)
+ * Requires workspaceId for data isolation
  */
-export async function runMatchGeneration(config?: Partial<MatchServiceConfig>): Promise<MatchGenerationResult> {
-  const service = createMatchService(config);
-  return service.generateMatches();
+export async function runMatchGeneration(workspaceId?: string, config?: Partial<MatchServiceConfig>): Promise<MatchGenerationResult> {
+  const service = createMatchService(config, workspaceId);
+  return service.generateMatches(workspaceId);
 }
 
 /**

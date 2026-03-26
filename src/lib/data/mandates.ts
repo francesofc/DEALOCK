@@ -224,12 +224,16 @@ export async function createMandate(mandate: Mandate, workspaceId?: string | nul
 
   // Auto-generate matches for all buyers against this new mandate in background
   try {
-    console.log('[AutoMatch] Generating matches for new mandate:', mandate.id)
-    runMatchGeneration().then(result => {
-      console.log('[AutoMatch] Generated matches for new mandate:', result)
-    }).catch(err => {
-      console.error('[AutoMatch] Failed to generate matches for mandate:', err)
-    })
+    console.log('[AutoMatch] Generating matches for new mandate:', mandate.id, 'workspace:', currentWorkspaceId)
+    if (currentWorkspaceId) {
+      runMatchGeneration(currentWorkspaceId).then(result => {
+        console.log('[AutoMatch] Generated matches for new mandate:', result)
+      }).catch(err => {
+        console.error('[AutoMatch] Failed to generate matches for mandate:', err)
+      })
+    } else {
+      console.warn('[AutoMatch] Skipping match generation: no workspace_id available')
+    }
   } catch (err) {
     // Non-blocking: match generation failure shouldn't break mandate creation
     console.error('[AutoMatch] Error triggering match generation:', err)

@@ -351,12 +351,16 @@ export async function createLead(lead: Lead, workspaceId?: string | null): Promi
 
   // Auto-generate matches for all buyers against this new seller in background
   try {
-    console.log('[AutoMatch] Generating matches for new seller:', lead.id)
-    runMatchGeneration().then(result => {
-      console.log('[AutoMatch] Generated matches for new seller:', result)
-    }).catch(err => {
-      console.error('[AutoMatch] Failed to generate matches for seller:', err)
-    })
+    console.log('[AutoMatch] Generating matches for new seller:', lead.id, 'workspace:', currentWorkspaceId)
+    if (currentWorkspaceId) {
+      runMatchGeneration(currentWorkspaceId).then(result => {
+        console.log('[AutoMatch] Generated matches for new seller:', result)
+      }).catch(err => {
+        console.error('[AutoMatch] Failed to generate matches for seller:', err)
+      })
+    } else {
+      console.warn('[AutoMatch] Skipping match generation: no workspace_id available')
+    }
   } catch (err) {
     // Non-blocking: match generation failure shouldn't break lead creation
     console.error('[AutoMatch] Error triggering match generation:', err)
