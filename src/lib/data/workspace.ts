@@ -76,19 +76,15 @@ async function checkTableExists(): Promise<boolean> {
  */
 export async function getActiveWorkspace(): Promise<WorkspaceRecord | null> {
   try {
-    // Direct query without table check first - let it fail naturally if table doesn't exist
+    // Use .limit(1) without .single() to avoid PGRST116 errors when no rows match
+    // .single() can cause the promise to not resolve properly in some cases
     const { data, error } = await workspacesTable()
       .select('*')
       .eq('is_active', true)
       .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
+      .limit(1);
 
     if (error) {
-      // PGRST116 = no rows returned (no workspace found)
-      if (error.code === 'PGRST116') {
-        return null;
-      }
       // PGRST204 = table does not exist
       if (error.code === 'PGRST204' || error.message?.includes('does not exist')) {
         showTableWarning();
@@ -98,7 +94,8 @@ export async function getActiveWorkspace(): Promise<WorkspaceRecord | null> {
       return null;
     }
 
-    return data as WorkspaceRecord;
+    // Return first workspace or null if array is empty
+    return (data && data.length > 0 ? data[0] : null) as WorkspaceRecord | null;
   } catch (error) {
     console.error('[Workspace] Error in getActiveWorkspace:', error);
     return null;
