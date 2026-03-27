@@ -41,6 +41,7 @@ import { getSellerNextAction, urgencyColor, getStaleness, getDaysSinceLastActivi
 import { calculateActivationState, getReadinessColor } from "@/lib/intelligence/mandate-activation";
 import { generateSellerCockpitSummary } from "@/lib/intelligence/cockpit-summary";
 import { SellerStatusSummaryCard, SellerWhyThisMatters } from "@/components/cockpit";
+import { MandateProbability, WhatBlocksSignature, ConversionActions, ConversionFunnel } from "@/components/mandate";
 import { Lead, Activity, Mandate, LeadStatus, MandateStatus, ActivityType, MatchOpportunity } from "@/types/database";
 import { SellerIntelligence } from "@/types/seller-intelligence";
 import { EditDrawer } from "@/components/ui/EditDrawer";
@@ -371,6 +372,41 @@ export default function SellerDetailPage() {
           readinessScore={intelligence?.mandate_readiness_score}
           matchCount={matches.filter(m => m.target_id === lead.id).length}
         />
+      </section>
+
+      {/* MANDATE CONVERSION SYSTEM */}
+      <section className="mb-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <MandateProbability 
+            lead={lead}
+            activities={activities}
+            mandate={mandate}
+            intelligence={intelligence}
+          />
+          <WhatBlocksSignature 
+            lead={lead}
+            activities={activities}
+            mandate={mandate}
+            intelligence={intelligence}
+          />
+        </div>
+      </section>
+
+      <section className="mb-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <ConversionActions 
+            lead={lead}
+            activities={activities}
+            mandate={mandate}
+            intelligence={intelligence}
+          />
+          <ConversionFunnel 
+            lead={lead}
+            activities={activities}
+            mandate={mandate}
+            intelligence={intelligence}
+          />
+        </div>
       </section>
 
       {/* MAIN GRID */}
