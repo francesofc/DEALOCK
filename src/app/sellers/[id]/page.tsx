@@ -39,6 +39,8 @@ import { getLeadById, getActivitiesByLeadId, getMandateByLeadId, updateLead, add
 import { getLeadIntelligence } from "@/lib/intelligence/mock-intelligence";
 import { getSellerNextAction, urgencyColor, getStaleness, getDaysSinceLastActivity, NextAction } from "@/lib/intelligence/next-actions";
 import { calculateActivationState, getReadinessColor } from "@/lib/intelligence/mandate-activation";
+import { generateSellerCockpitSummary } from "@/lib/intelligence/cockpit-summary";
+import { SellerStatusSummaryCard, SellerWhyThisMatters } from "@/components/cockpit";
 import { Lead, Activity, Mandate, LeadStatus, MandateStatus, ActivityType, MatchOpportunity } from "@/types/database";
 import { SellerIntelligence } from "@/types/seller-intelligence";
 import { EditDrawer } from "@/components/ui/EditDrawer";
@@ -352,6 +354,24 @@ export default function SellerDetailPage() {
         mandate={mandate}
         intelligence={intelligence}
       />
+
+      {/* COCKPIT STATUS SUMMARY */}
+      <section className="mb-8">
+        <SellerStatusSummaryCard 
+          summary={generateSellerCockpitSummary(lead, activities, mandate, matches, intelligence)} 
+        />
+      </section>
+
+      {/* WHY THIS MATTERS NOW */}
+      <section className="mb-8">
+        <SellerWhyThisMatters 
+          lead={lead}
+          activities={activities}
+          mandate={mandate}
+          readinessScore={intelligence?.mandate_readiness_score}
+          matchCount={matches.filter(m => m.target_id === lead.id).length}
+        />
+      </section>
 
       {/* MAIN GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">

@@ -41,6 +41,8 @@ import {
 import Link from "next/link";
 import { getBuyerById, getActivitiesByBuyerId, getMatches, getLeads, getMandates, getFinanceProfileByBuyer, updateBuyer, saveFinanceProfile, addActivity } from "@/lib/data";
 import { getBuyerNextAction, urgencyColor, getStaleness, getDaysSinceLastActivity } from "@/lib/intelligence/next-actions";
+import { generateBuyerCockpitSummary } from "@/lib/intelligence/cockpit-summary";
+import { BuyerStatusSummaryCard, BuyerWhyThisMatters } from "@/components/cockpit";
 import { Buyer, Activity, MatchOpportunity, Lead, Mandate, FinanceProfile, BuyerStatus, ActivityType } from "@/types/database";
 import { EditDrawer } from "@/components/ui/EditDrawer";
 import { BuyerEditPanel } from "@/components/buyers/BuyerEditPanel";
@@ -302,6 +304,23 @@ export default function BuyerDetailPage() {
         finance={finance}
         matches={matches}
       />
+
+      {/* COCKPIT STATUS SUMMARY */}
+      <section className="mb-8">
+        <BuyerStatusSummaryCard 
+          summary={generateBuyerCockpitSummary(buyer, activities, finance, matches)} 
+        />
+      </section>
+
+      {/* WHY THIS MATTERS NOW */}
+      <section className="mb-8">
+        <BuyerWhyThisMatters 
+          buyer={buyer}
+          activities={activities}
+          finance={finance}
+          matches={matches}
+        />
+      </section>
 
       {/* MAIN GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
