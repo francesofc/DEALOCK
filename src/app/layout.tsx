@@ -6,6 +6,8 @@ import { Header } from "@/components/layout/Header";
 import { LanguageProvider } from "@/components/providers/LanguageProvider";
 import { WorkspaceProvider } from "@/lib/workspace/WorkspaceContext";
 
+export const dynamic = 'force-dynamic';
+
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
