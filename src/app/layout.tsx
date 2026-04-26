@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
 import { LanguageProvider } from "@/components/providers/LanguageProvider";
 import { WorkspaceProvider } from "@/lib/workspace/WorkspaceContext";
+import { AmbientBackground } from "@/components/layout/AmbientBackground";
 
 export const dynamic = 'force-dynamic';
 
@@ -23,9 +24,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
+        <AmbientBackground />
         <LanguageProvider>
           <WorkspaceProvider>
-            <div className="flex h-screen bg-background">
+            <div className="flex h-screen relative">
               <Sidebar />
               <div className="flex-1 flex flex-col min-w-0">
                 <Header />

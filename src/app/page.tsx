@@ -868,42 +868,104 @@ function ActionPriorityCard({
   reason: string;
   onClick: () => void;
 }) {
-  const urgencyColors = {
-    critical: 'bg-red-500 text-white',
-    high: 'bg-amber-500 text-black',
-    normal: 'bg-blue-500 text-white',
-    low: 'bg-white/20 text-white',
+  // Urgency badge styles — glass pill with gradient/colored backgrounds
+  const urgencyStyles: Record<UrgencyLevel, { bg: string; text: string; border: string; glow: string }> = {
+    critical: {
+      bg: "rgba(255, 61, 100, 0.18)",
+      text: "#FF8AA6",
+      border: "rgba(255, 61, 100, 0.35)",
+      glow: "0 0 20px rgba(255, 61, 100, 0.25)",
+    },
+    high: {
+      bg: "rgba(255, 138, 0, 0.18)",
+      text: "#FFB870",
+      border: "rgba(255, 138, 0, 0.35)",
+      glow: "0 0 20px rgba(255, 138, 0, 0.20)",
+    },
+    normal: {
+      bg: "rgba(0, 212, 255, 0.16)",
+      text: "#7DE4FF",
+      border: "rgba(0, 212, 255, 0.30)",
+      glow: "0 0 16px rgba(0, 212, 255, 0.18)",
+    },
+    low: {
+      bg: "rgba(255, 255, 255, 0.08)",
+      text: "rgba(255, 255, 255, 0.7)",
+      border: "rgba(255, 255, 255, 0.15)",
+      glow: "none",
+    },
   };
-  
-  const iconBgColors: Record<string, string> = {
-    orange: 'bg-orange-500/10 text-orange-400',
-    blue: 'bg-blue-500/10 text-blue-400',
-    amber: 'bg-amber-500/10 text-amber-400',
-    violet: 'bg-violet-500/10 text-violet-400',
-    red: 'bg-red-500/10 text-red-400',
-    emerald: 'bg-emerald-500/10 text-emerald-400',
+
+  // Icon tile gradients (matching the urgency vibe)
+  const iconGradients: Record<string, string> = {
+    orange: "linear-gradient(135deg, #FF8A00 0%, #FF3D8B 100%)",     // Solar
+    blue: "linear-gradient(135deg, #00D4FF 0%, #6D4DFF 100%)",       // Stratos
+    amber: "linear-gradient(135deg, #FF8A00 0%, #FF3D8B 100%)",      // Solar
+    violet: "linear-gradient(135deg, #6D4DFF 0%, #FF3D8B 100%)",     // Aurora
+    red: "linear-gradient(135deg, #FF8A00 0%, #FF3D8B 100%)",        // Solar
+    emerald: "linear-gradient(135deg, #00FFAA 0%, #00D4FF 100%)",    // Mint
   };
-  
+
+  // Left accent stripe color based on urgency
+  const accentStripe: Record<UrgencyLevel, string> = {
+    critical: "linear-gradient(180deg, #FF3D64 0%, #FF3D8B 100%)",
+    high: "linear-gradient(180deg, #FF8A00 0%, #FF3D8B 100%)",
+    normal: "linear-gradient(180deg, #00D4FF 0%, #6D4DFF 100%)",
+    low: "rgba(255, 255, 255, 0.1)",
+  };
+
+  const urgencyStyle = urgencyStyles[urgency];
+
   return (
-    <div 
+    <div
       onClick={onClick}
-      className="surface-elevated rounded-xl p-4 border border-white/[0.06] hover:border-white/10 hover:bg-white/[0.02] transition-all cursor-pointer"
+      className="group relative overflow-hidden rounded-2xl p-5 cursor-pointer transition-all duration-300 hover:-translate-y-0.5"
+      style={{
+        background: "rgba(255, 255, 255, 0.04)",
+        backdropFilter: "blur(20px) saturate(160%)",
+        WebkitBackdropFilter: "blur(20px) saturate(160%)",
+        border: "0.5px solid rgba(255, 255, 255, 0.10)",
+      }}
     >
-      <div className="flex items-start gap-3">
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${iconBgColors[iconColor]}`}>
-          <Icon className="w-5 h-5" />
+      {/* Left accent stripe */}
+      <div
+        className="absolute left-0 top-0 bottom-0 w-[3px]"
+        style={{ background: accentStripe[urgency] }}
+      />
+
+      <div className="flex items-start gap-3 pl-2">
+        {/* Icon tile with gradient */}
+        <div
+          className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-lg"
+          style={{ background: iconGradients[iconColor] || iconGradients.violet }}
+        >
+          <Icon className="w-5 h-5 text-white" strokeWidth={2} />
         </div>
+
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <span className={`px-2 py-0.5 rounded text-xs font-medium uppercase ${urgencyColors[urgency]}`}>
+          {/* Urgency pill — glass with colored tint */}
+          <div className="flex items-center gap-2 mb-2">
+            <span
+              className="inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-semibold uppercase tracking-wider"
+              style={{
+                background: urgencyStyle.bg,
+                color: urgencyStyle.text,
+                border: `0.5px solid ${urgencyStyle.border}`,
+                backdropFilter: "blur(10px)",
+                WebkitBackdropFilter: "blur(10px)",
+                boxShadow: urgencyStyle.glow,
+              }}
+            >
               {urgency}
             </span>
           </div>
-          <h3 className="font-medium truncate">{title}</h3>
-          <p className="text-sm text-white/40 truncate">{subtitle}</p>
-          <div className="mt-2 pt-2 border-t border-white/[0.04]">
-            <p className="text-sm text-white/70">{action}</p>
-            <p className="text-xs text-white/40 mt-0.5">{reason}</p>
+
+          <h3 className="font-medium text-white truncate text-[15px]">{title}</h3>
+          <p className="text-sm text-white/50 truncate">{subtitle}</p>
+
+          <div className="mt-3 pt-3 border-t border-white/[0.06]">
+            <p className="text-sm text-white/85 font-medium">{action}</p>
+            <p className="text-xs text-white/45 mt-1">{reason}</p>
           </div>
         </div>
       </div>
@@ -930,34 +992,55 @@ function MetricCard({
   isCurrency?: boolean;
   onClick?: () => void;
 }) {
-  const colors = {
-    red: "from-red-500/10 to-red-500/5 border-red-500/20",
-    blue: "from-blue-500/10 to-blue-500/5 border-blue-500/20",
-    violet: "from-violet-500/10 to-violet-500/5 border-violet-500/20",
-    emerald: "from-emerald-500/10 to-emerald-500/5 border-emerald-500/20",
-    amber: "from-amber-500/10 to-amber-500/5 border-amber-500/20",
-    default: "from-white/[0.06] to-white/[0.02] border-white/[0.08]",
+  // Gradient backgrounds for the icon tile (small accent circle)
+  const iconGradients = {
+    red: "linear-gradient(135deg, #FF8A00 0%, #FF3D8B 100%)",      // Solar
+    blue: "linear-gradient(135deg, #00D4FF 0%, #6D4DFF 100%)",     // Stratos
+    violet: "linear-gradient(135deg, #6D4DFF 0%, #FF3D8B 100%)",   // Aurora
+    emerald: "linear-gradient(135deg, #00FFAA 0%, #00D4FF 100%)",  // Mint
+    amber: "linear-gradient(135deg, #FF8A00 0%, #FF3D8B 100%)",    // Solar
+    default: "linear-gradient(135deg, #00D4FF 0%, #6D4DFF 100%)",  // Stratos
   };
-  
-  const iconColors = {
-    red: "text-red-400",
-    blue: "text-blue-400",
-    violet: "text-violet-400",
-    emerald: "text-emerald-400",
-    amber: "text-amber-400",
-    default: "text-white/50",
+
+  // Same gradient applied to the big number via background-clip
+  const valueGradients = {
+    red: "text-solar",
+    blue: "text-stratos",
+    violet: "text-aurora",
+    emerald: "text-mint",
+    amber: "text-solar",
+    default: "text-stratos",
   };
-  
+
   return (
     <div 
-      className={`p-4 rounded-xl bg-gradient-to-br ${colors[color]} border cursor-pointer hover:brightness-110 transition-all`}
       onClick={onClick}
+      className="group relative p-5 rounded-2xl cursor-pointer transition-all duration-300 hover:-translate-y-0.5"
+      style={{
+        background: "rgba(255, 255, 255, 0.04)",
+        backdropFilter: "blur(20px) saturate(160%)",
+        WebkitBackdropFilter: "blur(20px) saturate(160%)",
+        border: "0.5px solid rgba(255, 255, 255, 0.10)",
+      }}
     >
-      <div className={`w-8 h-8 rounded-lg bg-white/[0.06] flex items-center justify-center mb-3`}>
-        <Icon className={`w-4 h-4 ${iconColors[color]}`} />
+      {/* Icon tile with gradient */}
+      <div 
+        className="w-9 h-9 rounded-xl flex items-center justify-center mb-3 shadow-lg"
+        style={{ background: iconGradients[color] }}
+      >
+        <Icon className="w-[18px] h-[18px] text-white" strokeWidth={2} />
       </div>
-      <p className={`text-xl font-semibold ${isCurrency ? 'text-sm' : ''}`}>{value}</p>
-      <p className="text-xs text-white/40">{label}</p>
+      
+      {/* Big metric number with gradient text */}
+      <p 
+        className={`font-medium tracking-tight ${valueGradients[color]} ${isCurrency ? 'text-2xl' : 'text-3xl'}`}
+        style={{ lineHeight: '1.05' }}
+      >
+        {value}
+      </p>
+      
+      {/* Label below */}
+      <p className="text-xs text-white/45 mt-2 font-medium">{label}</p>
     </div>
   );
 }
