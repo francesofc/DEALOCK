@@ -87,7 +87,15 @@ export function Header() {
   };
 
   return (
-    <header className="h-20 border-b border-white/[0.06] bg-[#0d0d0f] flex items-center justify-between px-8">
+    <header
+  className="h-20 flex items-center justify-between px-8 relative"
+  style={{
+    background: "rgba(255, 255, 255, 0.02)",
+    backdropFilter: "blur(24px) saturate(180%)",
+    WebkitBackdropFilter: "blur(24px) saturate(180%)",
+    borderBottom: "0.5px solid rgba(255, 255, 255, 0.06)",
+  }}
+>
       {/* Search */}
       <div className="flex-1 max-w-md">
         <div className="relative">
@@ -95,7 +103,13 @@ export function Header() {
           <input
             type="text"
             placeholder="Search leads, mandates..."
-            className="w-full pl-11 pr-4 py-2.5 bg-white/[0.03] rounded-xl text-sm placeholder:text-white/30 focus:outline-none focus:ring-1 focus:ring-white/10 border border-white/[0.06] transition-all"
+            className="w-full pl-11 pr-4 py-2.5 rounded-xl text-sm placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-violet-500/30 transition-all"
+            style={{
+              background: "rgba(255, 255, 255, 0.04)",
+              backdropFilter: "blur(10px)",
+              WebkitBackdropFilter: "blur(10px)",
+              border: "0.5px solid rgba(255, 255, 255, 0.08)",
+            }}
           />
         </div>
       </div>
